@@ -116,15 +116,15 @@ class CpuTracker : ITracker {
     }
 
     private fun readCpuTemperature(): Float {
-        val path = cpuThermalPath ?: return 0f
+        val path = cpuThermalPath ?: return -10000.0f
         try {
             val file = File(path)
             if (file.exists()) {
                 val tempStr = file.readText().trim()
-                val tempRaw = tempStr.toFloatOrNull() ?: return 0f
+                val tempRaw = tempStr.toFloatOrNull() ?: return -10000.0f
                 return if (tempRaw > 1000) tempRaw / 1000f else tempRaw
             }
         } catch (_: Exception) {}
-        return 0f
+        return -10000.0f
     }
 }

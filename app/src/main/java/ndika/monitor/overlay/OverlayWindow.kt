@@ -17,6 +17,7 @@ import android.widget.TextView
 import ndika.monitor.model.OverlayConfig
 import ndika.monitor.model.PerformanceMetrics
 import java.util.Locale
+import kotlin.math.min
 
 class OverlayWindow(
     private val context: Context,
@@ -25,11 +26,18 @@ class OverlayWindow(
 
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private var rootLayout: FrameLayout? = null
+    private var containerLayout: LinearLayout? = null
     private var primaryTextView: TextView? = null
     private var secondaryTextView: TextView? = null
     private var layoutParams: WindowManager.LayoutParams? = null
     private var isShown = false
     private var typeface: Typeface? = null
+
+    private data class MetricItem(
+        val label: String,
+        val value: String,
+        val unit: String
+    )
 
     init {
         loadCustomTypeface()
@@ -61,12 +69,14 @@ class OverlayWindow(
         rootLayout = FrameLayout(context).apply {
             val pad = (config.paddingDp * density).toInt()
             setPadding(pad, pad, pad, pad)
-            background = createBackgroundDrawable()
         }
 
-        val container = LinearLayout(context).apply {
+        containerLayout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.START
+            background = createBackgroundDrawable()
+            val innerPad = if (config.showBackground) (4 * density).toInt() else 0
+            setPadding(innerPad, innerPad, innerPad, innerPad)
         }
 
         // Primary metrics TextView
@@ -74,22 +84,33 @@ class OverlayWindow(
             typeface = this@OverlayWindow.typeface
             setTextSize(TypedValue.COMPLEX_UNIT_SP, config.textSizeSp.toFloat())
             setTextColor(config.textColor)
-            setShadowLayer(3f, 1f, 1f, Color.BLACK)
+            includeFontPadding = false
+            if (config.showBackground) {
+                setShadowLayer(0f, 0f, 0f, Color.BLACK)
+            } else {
+                setShadowLayer(1.0f, 1.0f, 1.0f, Color.BLACK)
+            }
             text = "FPS --.-"
         }
-        container.addView(primaryTextView)
+        containerLayout?.addView(primaryTextView)
 
-        // Secondary layer TextView
+        // Secondary layer TextView (package/activity)
         secondaryTextView = TextView(context).apply {
             typeface = this@OverlayWindow.typeface
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, (config.textSizeSp * 0.85f))
+            val subSize = min(config.textSizeSp, 10).toFloat()
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, subSize)
             setTextColor(config.textColor)
-            setShadowLayer(3f, 1f, 1f, Color.BLACK)
+            includeFontPadding = false
+            if (config.showBackground) {
+                setShadowLayer(0f, 0f, 0f, Color.BLACK)
+            } else {
+                setShadowLayer(1.0f, 1.0f, 1.0f, Color.BLACK)
+            }
             visibility = if (config.showLayerName) View.VISIBLE else View.GONE
         }
-        container.addView(secondaryTextView)
+        containerLayout?.addView(secondaryTextView)
 
-        rootLayout?.addView(container)
+        rootLayout?.addView(containerLayout)
 
         // LayoutParams configuration
         val windowType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -140,7 +161,7 @@ class OverlayWindow(
         val density = context.resources.displayMetrics.density
         return GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
-            cornerRadius = config.cornerRadiusDp * density
+            cornerRadius = 16f * density
             if (config.showBackground) {
                 setColor(config.backgroundColor)
             } else {
@@ -152,113 +173,206 @@ class OverlayWindow(
     fun updateMetrics(metrics: PerformanceMetrics) {
         if (!isShown) return
 
-        val lines = mutableListOf<String>()
-        val unit = config.temperatureUnit
+        val items = mutableListOf<MetricItem>()
+        val isCelsius = !config.temperatureUnit.equals("fahrenheit", ignoreCase = true)
 
-        if (config.showFps) {
-            lines.add(String.format(Locale.US, "FPS  %5.1f", metrics.fps))
-        }
-
+        // Exact TakoStats (fq.java) Display Order:
+        // 1. CPU Usage %
         if (config.showCpuUsage) {
-            lines.add(String.format(Locale.US, "CPU  %5.1f %%", metrics.cpuUsage))
+            items.add(MetricItem("CPU", String.format(Locale.ROOT, "%.1f", metrics.cpuUsage), " %"))
         }
 
-        if (config.showCpuFrequency && metrics.cpuFrequencyGhz > 0f) {
-            lines.add(String.format(Locale.US, "FRQ  %5.2f GHz", metrics.cpuFrequencyGhz))
+        // 2. CPU Temperature
+        if (config.showCpuTemperature && metrics.cpuTemperature > -10000.0f) {
+            val v = if (isCelsius) metrics.cpuTemperature else ((metrics.cpuTemperature * 9.0f) / 5.0f) + 32.0f
+            val u = if (isCelsius) "°C" else "°F"
+            items.add(MetricItem("CPU", String.format(Locale.ROOT, "%.1f", v), u))
         }
 
-        if (config.showCpuTemperature && metrics.cpuTemperature > 0f) {
-            val formattedTemp = metrics.formatTemperature(metrics.cpuTemperature, unit)
-            lines.add(String.format(Locale.US, "CPUT %s", formattedTemp))
+        // 3. CPU Core Frequencies
+        if (config.showPerCoreCpu && metrics.coreFrequencies.isNotEmpty()) {
+            for (i in metrics.coreFrequencies.indices) {
+                val freqMhz = metrics.coreFrequencies[i] / 1000
+                items.add(MetricItem("CPU$i", freqMhz.toString(), " MHz"))
+            }
+        } else if (config.showCpuFrequency && metrics.cpuFrequencyGhz > 0f) {
+            val freqMhz = (metrics.cpuFrequencyGhz * 1000).toInt()
+            items.add(MetricItem("CPU0", freqMhz.toString(), " MHz"))
         }
 
-        if (config.showGpuUsage && metrics.gpuUsage > 0f) {
-            lines.add(String.format(Locale.US, "GPU  %5.1f %%", metrics.gpuUsage))
+        // 4. GPU Temperature
+        if (config.showGpuTemperature && metrics.gpuTemperature > -10000.0f) {
+            val v = if (isCelsius) metrics.gpuTemperature else ((metrics.gpuTemperature * 9.0f) / 5.0f) + 32.0f
+            val u = if (isCelsius) "°C" else "°F"
+            items.add(MetricItem("GPU", String.format(Locale.ROOT, "%.1f", v), u))
         }
 
-        if (config.showGpuTemperature && metrics.gpuTemperature > 0f) {
-            val formattedTemp = metrics.formatTemperature(metrics.gpuTemperature, unit)
-            lines.add(String.format(Locale.US, "GPUT %s", formattedTemp))
+        // 5. BAT Temperature
+        if (config.showBatteryTemperature && metrics.batteryTemperature > -10000.0f) {
+            val v = if (isCelsius) metrics.batteryTemperature else ((metrics.batteryTemperature * 9.0f) / 5.0f) + 32.0f
+            val u = if (isCelsius) "°C" else "°F"
+            items.add(MetricItem("BAT", String.format(Locale.ROOT, "%.1f", v), u))
         }
 
-        if (config.showBatteryTemperature && metrics.batteryTemperature > 0f) {
-            val formattedTemp = metrics.formatTemperature(metrics.batteryTemperature, unit)
-            lines.add(String.format(Locale.US, "BAT  %s", formattedTemp))
+        // 6. SKN Temperature
+        if (config.showSkinTemperature && metrics.skinTemperature > -10000.0f) {
+            val v = if (isCelsius) metrics.skinTemperature else ((metrics.skinTemperature * 9.0f) / 5.0f) + 32.0f
+            val u = if (isCelsius) "°C" else "°F"
+            items.add(MetricItem("SKN", String.format(Locale.ROOT, "%.1f", v), u))
         }
 
-        if (config.showSkinTemperature && metrics.skinTemperature > 0f) {
-            val formattedTemp = metrics.formatTemperature(metrics.skinTemperature, unit)
-            lines.add(String.format(Locale.US, "SKIN %s", formattedTemp))
+        // 7. FPS
+        if (config.showFps) {
+            items.add(MetricItem("FPS", String.format(Locale.ROOT, "%.1f", metrics.fps), ""))
         }
 
-        if (config.showBatteryCurrent && metrics.batteryCurrentAmp > 0f) {
-            lines.add(String.format(Locale.US, "CUR  %5.2f A", metrics.batteryCurrentAmp))
-        }
-
-        if (config.showBatteryVoltage && metrics.batteryVoltageVolts > 0f) {
-            lines.add(String.format(Locale.US, "VOLT %5.2f V", metrics.batteryVoltageVolts))
-        }
-
-        if (config.showBatteryPower && metrics.batteryPowerWatts > 0f) {
-            lines.add(String.format(Locale.US, "PWR  %5.2f W", metrics.batteryPowerWatts))
-        }
-
-        if (config.showFramePower && metrics.framePowerMilliJoules > 0f) {
-            lines.add(String.format(Locale.US, "FPWR %5.1f mJ", metrics.framePowerMilliJoules))
-        }
-
+        // 8. MEM (MB)
         if (config.showMemoryMb && metrics.memoryUsageMb > 0) {
-            lines.add(String.format(Locale.US, "RAM  %5d MB", metrics.memoryUsageMb))
+            items.add(MetricItem("MEM", metrics.memoryUsageMb.toString(), " MB"))
         }
 
+        // 9. MEM (%)
         if (config.showMemoryPercentage && metrics.memoryUsagePercentage > 0f) {
-            lines.add(String.format(Locale.US, "MEM  %5.1f %%", metrics.memoryUsagePercentage))
+            items.add(MetricItem("MEM", String.format(Locale.ROOT, "%.1f", metrics.memoryUsagePercentage), " %"))
         }
 
-        if (config.showDownloadSpeed && metrics.downloadSpeedBytesPerSec > 0) {
-            val speedStr = formatNetworkSpeed(metrics.downloadSpeedBytesPerSec)
-            lines.add(String.format(Locale.US, "DL   %s", speedStr))
+        // 10. UL (Upload Speed)
+        if (config.showUploadSpeed) {
+            val (vStr, uStr) = formatNetworkSpeed(metrics.uploadSpeedBytesPerSec)
+            items.add(MetricItem("UL", vStr, uStr))
         }
 
-        if (config.showUploadSpeed && metrics.uploadSpeedBytesPerSec > 0) {
-            val speedStr = formatNetworkSpeed(metrics.uploadSpeedBytesPerSec)
-            lines.add(String.format(Locale.US, "UL   %s", speedStr))
+        // 11. DL (Download Speed)
+        if (config.showDownloadSpeed) {
+            val (vStr, uStr) = formatNetworkSpeed(metrics.downloadSpeedBytesPerSec)
+            items.add(MetricItem("DL", vStr, uStr))
         }
 
-        val formattedText = if (lines.isNotEmpty()) {
-            lines.joinToString("\n")
-        } else {
-            String.format(Locale.US, "FPS  %5.1f", metrics.fps)
+        // 12. CUR (Current in A) - Hidden while charging
+        if (config.showBatteryCurrent && metrics.batteryCurrentAmp != Float.MIN_VALUE) {
+            items.add(MetricItem("CUR", String.format(Locale.ROOT, "%.3f", metrics.batteryCurrentAmp), " A"))
         }
 
+        // 13. VOLT (Voltage in V) - Hidden while charging
+        if (config.showBatteryVoltage && metrics.batteryVoltageVolts != Float.MIN_VALUE) {
+            items.add(MetricItem("VOLT", String.format(Locale.ROOT, "%.3f", metrics.batteryVoltageVolts), " V"))
+        }
+
+        // 14. PWR (Power in W) - Hidden while charging
+        if (config.showBatteryPower && metrics.batteryPowerWatts != Float.MIN_VALUE) {
+            items.add(MetricItem("PWR", String.format(Locale.ROOT, "%.3f", metrics.batteryPowerWatts), " W"))
+        }
+
+        // 15. FPWR (Frame Power in W) - Hidden while charging
+        if (config.showFramePower && metrics.framePowerWatts != Float.MIN_VALUE) {
+            items.add(MetricItem("FPWR", String.format(Locale.ROOT, "%.3f", metrics.framePowerWatts), " W"))
+        }
+
+        // Dynamic 3-Column Monospace Alignment
+        var maxLabelLen = 0
+        var maxValueLen = 0
+        var maxUnitLen = 0
+
+        for (item in items) {
+            if (item.label.length > maxLabelLen) maxLabelLen = item.label.length
+            if (item.value.length > maxValueLen) maxValueLen = item.value.length
+            if (item.unit.length > maxUnitLen) maxUnitLen = item.unit.length
+        }
+
+        val sb = StringBuilder()
+        for (item in items) {
+            padText(sb, maxLabelLen, item.label, alignLeft = true)
+            sb.append(' ')
+            padText(sb, maxValueLen, item.value, alignLeft = false)
+            padText(sb, maxUnitLen, item.unit, alignLeft = true)
+            sb.append('\n')
+        }
+
+        val formattedText = if (sb.isNotEmpty()) sb.substring(0, sb.length - 1) else String.format(Locale.ROOT, "FPS   %.1f", metrics.fps)
         primaryTextView?.text = formattedText
 
+        // Secondary View (Layer Name: package / Activity)
         if (config.showLayerName && metrics.layerName.isNotBlank()) {
+            val raw = metrics.layerName
+            val slashIdx = raw.indexOf('/')
+            val formattedLayer = if (slashIdx != -1) {
+                val pkg = raw.substring(0, slashIdx)
+                var cls = raw.substring(slashIdx + 1)
+                if (cls.startsWith("$pkg.")) {
+                    cls = cls.substring(pkg.length + 1)
+                }
+                "$pkg\n$cls"
+            } else {
+                raw
+            }
+            secondaryTextView?.text = formattedLayer
             secondaryTextView?.visibility = View.VISIBLE
-            secondaryTextView?.text = metrics.layerName
         } else {
             secondaryTextView?.visibility = View.GONE
         }
     }
 
-    private fun formatNetworkSpeed(bytesPerSec: Long): String {
-        return when {
-            bytesPerSec >= 1024 * 1024 -> String.format(Locale.US, "%5.1f MB/s", bytesPerSec / (1024.0 * 1024.0))
-            bytesPerSec >= 1024 -> String.format(Locale.US, "%5.1f KB/s", bytesPerSec / 1024.0)
-            else -> String.format(Locale.US, "%5d B/s", bytesPerSec)
+    private fun padText(sb: StringBuilder, targetLen: Int, text: String, alignLeft: Boolean) {
+        val len = text.length
+        if (alignLeft) {
+            sb.append(text)
+            for (i in 0 until (targetLen - len)) {
+                sb.append(' ')
+            }
+        } else {
+            for (i in 0 until (targetLen - len)) {
+                sb.append(' ')
+            }
+            sb.append(text)
         }
+    }
+
+    private fun formatNetworkSpeed(bytes: Long): Pair<String, String> {
+        val f = bytes.toFloat()
+        val idx = when {
+            f / 1.1258999E15f > 1.0f -> 0
+            f / 1.0995116E12f > 1.0f -> 1
+            f / 1.0737418E9f > 1.0f -> 2
+            f / 1048576.0f > 1.0f -> 3
+            f / 1024.0f > 1.0f -> 4
+            else -> 5
+        }
+        val divisors = longArrayOf(1125899906842624L, 1099511627776L, 1073741824L, 1048576L, 1024L, 1L)
+        val units = arrayOf("PiB", "TiB", "GiB", "MiB", "KiB", "B")
+        val valueStr = String.format(Locale.ROOT, "%.1f", bytes.toFloat() / divisors[idx])
+        val unitStr = " " + units[idx] + "/s"
+        return Pair(valueStr, unitStr)
     }
 
     fun applyConfig(newConfig: OverlayConfig) {
         this.config = newConfig
-        rootLayout?.background = createBackgroundDrawable()
+        val density = context.resources.displayMetrics.density
+
+        containerLayout?.apply {
+            background = createBackgroundDrawable()
+            val innerPad = if (config.showBackground) (4 * density).toInt() else 0
+            setPadding(innerPad, innerPad, innerPad, innerPad)
+        }
+
         primaryTextView?.apply {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, config.textSizeSp.toFloat())
             setTextColor(config.textColor)
+            if (config.showBackground) {
+                setShadowLayer(0f, 0f, 0f, Color.BLACK)
+            } else {
+                setShadowLayer(1.0f, 1.0f, 1.0f, Color.BLACK)
+            }
         }
+
         secondaryTextView?.apply {
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, (config.textSizeSp * 0.85f))
+            val subSize = min(config.textSizeSp, 10).toFloat()
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, subSize)
             setTextColor(config.textColor)
+            if (config.showBackground) {
+                setShadowLayer(0f, 0f, 0f, Color.BLACK)
+            } else {
+                setShadowLayer(1.0f, 1.0f, 1.0f, Color.BLACK)
+            }
             visibility = if (config.showLayerName) View.VISIBLE else View.GONE
         }
 

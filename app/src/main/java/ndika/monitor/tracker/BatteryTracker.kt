@@ -20,74 +20,101 @@ class BatteryTracker(private val context: Context) : ITracker {
     }
 
     override fun update(metrics: PerformanceMetrics) {
-        var tempC = 0f
-        var voltageV = 0f
-        var currentA = 0f
+        var isPlugged = false
+        var voltageMilliVolts = 0
+        var batteryTempTenths = -100000
 
-        // 1. Try sticky broadcast Intent first
+        // 1. Read sticky battery intent
         try {
             val intent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
             if (intent != null) {
-                val tempRaw = intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0)
-                tempC = tempRaw / 10.0f
-
-                val voltRaw = intent.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 0)
-                voltageV = voltRaw / 1000.0f
+                isPlugged = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0
+                val status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+                if (status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL) {
+                    isPlugged = true
+                }
+                voltageMilliVolts = intent.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 0)
+                batteryTempTenths = intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, -100000)
             }
         } catch (_: Exception) {}
 
-        // 2. BatteryManager Property for Current
-        try {
-            if (batteryManager != null) {
-                val currentMicroAmp = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
-                if (currentMicroAmp != Int.MIN_VALUE && currentMicroAmp != 0) {
-                    currentA = abs(currentMicroAmp) / 1_000_000.0f
-                }
-            }
-        } catch (_: Exception) {}
-
-        // 3. Fallback to /sys/class/power_supply/battery
-        if (currentA == 0f && currentNowPath != null) {
-            try {
-                val f = File(currentNowPath!!)
-                if (f.exists() && f.canRead()) {
-                    val raw = abs(f.readText().trim().toLongOrNull() ?: 0L)
-                    currentA = if (raw > 10_000) raw / 1_000_000.0f else raw / 1000.0f
-                }
-            } catch (_: Exception) {}
-        }
-
-        if (voltageV == 0f && voltageNowPath != null) {
-            try {
-                val f = File(voltageNowPath!!)
-                if (f.exists() && f.canRead()) {
-                    val raw = f.readText().trim().toLongOrNull() ?: 0L
-                    voltageV = if (raw > 100_000) raw / 1_000_000.0f else raw / 1000.0f
-                }
-            } catch (_: Exception) {}
-        }
-
-        if (tempC == 0f && tempPath != null) {
+        // 2. Battery Temperature
+        if (batteryTempTenths != -100000) {
+            metrics.batteryTemperature = batteryTempTenths / 10.0f
+        } else if (tempPath != null) {
             try {
                 val f = File(tempPath!!)
                 if (f.exists() && f.canRead()) {
-                    val raw = f.readText().trim().toFloatOrNull() ?: 0f
-                    tempC = if (raw > 100) raw / 10.0f else raw
+                    val raw = f.readText().trim().toFloatOrNull() ?: -100000f
+                    metrics.batteryTemperature = if (raw > 100f) raw / 10.0f else raw
                 }
             } catch (_: Exception) {}
         }
 
-        metrics.batteryTemperature = tempC
-        metrics.batteryVoltageVolts = voltageV
-        metrics.batteryCurrentAmp = currentA
-        val powerWatts = voltageV * currentA
-        metrics.batteryPowerWatts = powerWatts
+        // 3. Read Current in microAmperes
+        var currentMicroAmp = Int.MIN_VALUE
+        try {
+            if (batteryManager != null) {
+                val cur = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
+                if (cur != Int.MIN_VALUE && cur != 0) {
+                    currentMicroAmp = cur
+                }
+            }
+        } catch (_: Exception) {}
 
-        // Calculate power consumption per frame in milliJoules (mJ = W * 1000 / FPS)
-        if (metrics.fps > 0f && powerWatts > 0f) {
-            metrics.framePowerMilliJoules = (powerWatts * 1000.0f) / metrics.fps
+        // Fallback sysfs for current
+        if (currentMicroAmp == Int.MIN_VALUE && currentNowPath != null) {
+            try {
+                val f = File(currentNowPath!!)
+                if (f.exists() && f.canRead()) {
+                    val raw = f.readText().trim().toIntOrNull() ?: Int.MIN_VALUE
+                    if (raw != Int.MIN_VALUE) {
+                        currentMicroAmp = raw
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        // Fallback sysfs for voltage
+        if (voltageMilliVolts <= 0 && voltageNowPath != null) {
+            try {
+                val f = File(voltageNowPath!!)
+                if (f.exists() && f.canRead()) {
+                    val raw = f.readText().trim().toIntOrNull() ?: 0
+                    voltageMilliVolts = if (raw > 100_000) raw / 1000 else raw
+                }
+            } catch (_: Exception) {}
+        }
+
+        // 4. Normalize Current & Check Charging State (Exact TakoStats logic)
+        if (currentMicroAmp != Int.MIN_VALUE) {
+            if (abs(currentMicroAmp) < 5000) {
+                currentMicroAmp *= 1000
+            }
+            if (isPlugged && currentMicroAmp < 0) {
+                currentMicroAmp = -currentMicroAmp
+            } else if (!isPlugged && currentMicroAmp >= 0) {
+                currentMicroAmp = -currentMicroAmp
+            }
+        }
+
+        val isDischarging = !isPlugged && (currentMicroAmp < 0 || currentMicroAmp == Int.MIN_VALUE)
+        metrics.isCharging = !isDischarging
+
+        if (isDischarging && voltageMilliVolts > 0 && currentMicroAmp != Int.MIN_VALUE) {
+            val currentA = abs(currentMicroAmp) / 1_000_000.0f
+            val voltageV = voltageMilliVolts / 1000.0f
+            val powerW = currentA * voltageV
+
+            metrics.batteryCurrentAmp = currentA
+            metrics.batteryVoltageVolts = voltageV
+            metrics.batteryPowerWatts = powerW
+            metrics.framePowerWatts = if (metrics.fps > 0f) powerW / metrics.fps else 0.0f
         } else {
-            metrics.framePowerMilliJoules = 0.0f
+            metrics.batteryCurrentAmp = Float.MIN_VALUE
+            metrics.batteryVoltageVolts = Float.MIN_VALUE
+            metrics.batteryPowerWatts = Float.MIN_VALUE
+            metrics.framePowerWatts = Float.MIN_VALUE
         }
     }
 

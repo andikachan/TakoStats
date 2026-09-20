@@ -179,30 +179,57 @@ class CustomizeOverlayActivity : AppCompatActivity() {
     }
 
     private fun updatePreview() {
-        val lines = mutableListOf<String>()
-        val unit = config.temperatureUnit
-        val tempUnitStr = if (unit.equals("fahrenheit", ignoreCase = true)) "°F" else "°C"
+        data class Item(val label: String, val value: String, val unit: String)
+        val items = mutableListOf<Item>()
+        val isCelsius = !config.temperatureUnit.equals("fahrenheit", ignoreCase = true)
+        val tempUnitStr = if (isCelsius) "°C" else "°F"
 
-        if (config.showFps) lines.add("FPS   60.0")
-        if (config.showCpuUsage) lines.add("CPU   25.3 %")
-        if (config.showCpuFrequency) lines.add("FRQ   2.40 GHz")
-        if (config.showCpuTemperature) lines.add("CPUT  42.0 $tempUnitStr")
-        if (config.showGpuUsage) lines.add("GPU   18.5 %")
-        if (config.showGpuTemperature) lines.add("GPUT  40.0 $tempUnitStr")
-        if (config.showBatteryTemperature) lines.add("BAT   34.5 $tempUnitStr")
-        if (config.showSkinTemperature) lines.add("SKIN  33.0 $tempUnitStr")
-        if (config.showBatteryCurrent) lines.add("CUR   0.45 A")
-        if (config.showBatteryVoltage) lines.add("VOLT  4.10 V")
-        if (config.showBatteryPower) lines.add("PWR   1.85 W")
-        if (config.showFramePower) lines.add("FPWR  30.8 mJ")
-        if (config.showMemoryMb) lines.add("RAM   3840 MB")
-        if (config.showMemoryPercentage) lines.add("MEM   48.0 %")
-        if (config.showDownloadSpeed) lines.add("DL    1.5 MB/s")
-        if (config.showUploadSpeed) lines.add("UL    120 KB/s")
+        if (config.showCpuUsage) items.add(Item("CPU", "25.3", " %"))
+        if (config.showCpuTemperature) items.add(Item("CPU", "42.0", tempUnitStr))
+        if (config.showCpuFrequency) items.add(Item("CPU0", "2400", " MHz"))
+        if (config.showGpuTemperature) items.add(Item("GPU", "40.0", tempUnitStr))
+        if (config.showBatteryTemperature) items.add(Item("BAT", "34.5", tempUnitStr))
+        if (config.showSkinTemperature) items.add(Item("SKN", "33.0", tempUnitStr))
+        if (config.showFps) items.add(Item("FPS", "60.0", ""))
+        if (config.showMemoryMb) items.add(Item("MEM", "3840", " MB"))
+        if (config.showMemoryPercentage) items.add(Item("MEM", "48.0", " %"))
+        if (config.showUploadSpeed) items.add(Item("UL", "120.0", " KiB/s"))
+        if (config.showDownloadSpeed) items.add(Item("DL", "1.5", " MiB/s"))
+        if (config.showBatteryCurrent) items.add(Item("CUR", "0.450", " A"))
+        if (config.showBatteryVoltage) items.add(Item("VOLT", "4.100", " V"))
+        if (config.showBatteryPower) items.add(Item("PWR", "1.845", " W"))
+        if (config.showFramePower) items.add(Item("FPWR", "0.031", " W"))
+
+        var maxLabelLen = 0
+        var maxValueLen = 0
+        var maxUnitLen = 0
+
+        for (item in items) {
+            if (item.label.length > maxLabelLen) maxLabelLen = item.label.length
+            if (item.value.length > maxValueLen) maxValueLen = item.value.length
+            if (item.unit.length > maxUnitLen) maxUnitLen = item.unit.length
+        }
+
+        val sb = StringBuilder()
+        for (item in items) {
+            val lPad = maxLabelLen - item.label.length
+            sb.append(item.label)
+            for (i in 0 until lPad) sb.append(' ')
+            sb.append(' ')
+            val vPad = maxValueLen - item.value.length
+            for (i in 0 until vPad) sb.append(' ')
+            sb.append(item.value)
+            sb.append(item.unit)
+            val uPad = maxUnitLen - item.unit.length
+            for (i in 0 until uPad) sb.append(' ')
+            sb.append('\n')
+        }
+
+        val text = if (sb.isNotEmpty()) sb.substring(0, sb.length - 1) else "FPS   60.0"
 
         binding.previewOverlayText.textSize = config.textSizeSp.toFloat()
         binding.previewOverlayText.setTextColor(config.textColor)
-        binding.previewOverlayText.text = if (lines.isNotEmpty()) lines.joinToString("\n") else "FPS   60.0"
+        binding.previewOverlayText.text = text
 
         if (config.showBackground) {
             binding.previewOverlayCard.setCardBackgroundColor(config.backgroundColor)

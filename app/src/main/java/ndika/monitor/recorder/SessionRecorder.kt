@@ -68,7 +68,7 @@ object SessionRecorder {
             voltageV = metrics.batteryVoltageVolts,
             currentA = metrics.batteryCurrentAmp,
             powerW = metrics.batteryPowerWatts,
-            framePowerMj = metrics.framePowerMilliJoules,
+            framePowerMj = if (metrics.framePowerWatts != Float.MIN_VALUE) metrics.framePowerWatts else 0.0f,
             memMb = metrics.memoryUsageMb
         )
         telemetrySamplesList.add(sample)

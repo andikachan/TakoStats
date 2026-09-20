@@ -86,14 +86,14 @@ class GpuTracker : ITracker {
     }
 
     private fun readGpuTemperature(): Float {
-        val path = gpuThermalPath ?: return 0f
+        val path = gpuThermalPath ?: return -10000.0f
         try {
             val file = File(path)
-            if (file.exists() && file.canRead()) {
-                val raw = file.readText().trim().toFloatOrNull() ?: 0f
+            if (file.exists()) {
+                val raw = file.readText().trim().toFloatOrNull() ?: return -10000.0f
                 return if (raw > 1000) raw / 1000f else raw
             }
         } catch (_: Exception) {}
-        return 0f
+        return -10000.0f
     }
 }
