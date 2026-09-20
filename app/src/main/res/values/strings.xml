@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">TakoStats</string>
+    <string name="app_name">ndimonitor</string>
     <string name="overlay">Overlay</string>
     <string name="service_running">RUNNING</string>
     <string name="service_stopped">STOPPED</string>
@@ -53,7 +53,7 @@
     <string name="version">Version</string>
 
     <string name="notification_channel_name">Performance Overlay</string>
-    <string name="notification_channel_desc">Active foreground service notification for TakoStats</string>
-    <string name="overlay_running">TakoStats Overlay Active</string>
+    <string name="notification_channel_desc">Active foreground service notification for ndimonitor</string>
+    <string name="overlay_running">ndimonitor Overlay Active</string>
     <string name="tap_to_configure">Tap to configure monitor</string>
 </resources>

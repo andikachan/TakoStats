@@ -4,15 +4,15 @@ plugins {
 }
 
 android {
-    namespace = "rikka.fpsmonitor"
+    namespace = "ndika.monitor"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "rikka.fpsmonitor"
+        applicationId = "ndika.monitor"
         minSdk = 24
         targetSdk = 34
-        versionCode = 315
-        versionName = "3.1.5"
+        versionCode = 100
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
