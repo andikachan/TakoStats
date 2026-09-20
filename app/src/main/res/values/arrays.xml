@@ -31,4 +31,14 @@
         <item>bottom_center</item>
         <item>center</item>
     </string-array>
+
+    <string-array name="temperature_unit_entries">
+        <item>@string/temperature_unit_celsius</item>
+        <item>@string/temperature_unit_fahrenheit</item>
+    </string-array>
+
+    <string-array name="temperature_unit_values">
+        <item>celsius</item>
+        <item>fahrenheit</item>
+    </string-array>
 </resources>

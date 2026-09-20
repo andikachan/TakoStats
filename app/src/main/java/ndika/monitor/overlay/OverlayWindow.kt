@@ -99,9 +99,18 @@ class OverlayWindow(
             WindowManager.LayoutParams.TYPE_PHONE
         }
 
-        val flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+        var flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+
+        if (config.hideFromScreenCaptures) {
+            flags = flags or WindowManager.LayoutParams.FLAG_SECURE
+        }
+
+        if (!config.hideFromLockScreen) {
+            @Suppress("DEPRECATION")
+            flags = flags or WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
+        }
 
         layoutParams = WindowManager.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -144,6 +153,7 @@ class OverlayWindow(
         if (!isShown) return
 
         val lines = mutableListOf<String>()
+        val unit = config.temperatureUnit
 
         if (config.showFps) {
             lines.add(String.format(Locale.US, "FPS  %5.1f", metrics.fps))
@@ -158,7 +168,8 @@ class OverlayWindow(
         }
 
         if (config.showCpuTemperature && metrics.cpuTemperature > 0f) {
-            lines.add(String.format(Locale.US, "CPUT %5.1f °C", metrics.cpuTemperature))
+            val formattedTemp = metrics.formatTemperature(metrics.cpuTemperature, unit)
+            lines.add(String.format(Locale.US, "CPUT %s", formattedTemp))
         }
 
         if (config.showGpuUsage && metrics.gpuUsage > 0f) {
@@ -166,11 +177,18 @@ class OverlayWindow(
         }
 
         if (config.showGpuTemperature && metrics.gpuTemperature > 0f) {
-            lines.add(String.format(Locale.US, "GPUT %5.1f °C", metrics.gpuTemperature))
+            val formattedTemp = metrics.formatTemperature(metrics.gpuTemperature, unit)
+            lines.add(String.format(Locale.US, "GPUT %s", formattedTemp))
         }
 
         if (config.showBatteryTemperature && metrics.batteryTemperature > 0f) {
-            lines.add(String.format(Locale.US, "BAT  %5.1f °C", metrics.batteryTemperature))
+            val formattedTemp = metrics.formatTemperature(metrics.batteryTemperature, unit)
+            lines.add(String.format(Locale.US, "BAT  %s", formattedTemp))
+        }
+
+        if (config.showSkinTemperature && metrics.skinTemperature > 0f) {
+            val formattedTemp = metrics.formatTemperature(metrics.skinTemperature, unit)
+            lines.add(String.format(Locale.US, "SKIN %s", formattedTemp))
         }
 
         if (config.showBatteryCurrent && metrics.batteryCurrentAmp > 0f) {
@@ -183,6 +201,10 @@ class OverlayWindow(
 
         if (config.showBatteryPower && metrics.batteryPowerWatts > 0f) {
             lines.add(String.format(Locale.US, "PWR  %5.2f W", metrics.batteryPowerWatts))
+        }
+
+        if (config.showFramePower && metrics.framePowerMilliJoules > 0f) {
+            lines.add(String.format(Locale.US, "FPWR %5.1f mJ", metrics.framePowerMilliJoules))
         }
 
         if (config.showMemoryMb && metrics.memoryUsageMb > 0) {
@@ -244,6 +266,21 @@ class OverlayWindow(
             params.gravity = config.gravity
             params.x = config.offsetX
             params.y = config.offsetY
+
+            var flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+
+            if (config.hideFromScreenCaptures) {
+                flags = flags or WindowManager.LayoutParams.FLAG_SECURE
+            }
+
+            if (!config.hideFromLockScreen) {
+                @Suppress("DEPRECATION")
+                flags = flags or WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
+            }
+            params.flags = flags
+
             if (isShown) {
                 try {
                     windowManager.updateViewLayout(rootLayout, params)

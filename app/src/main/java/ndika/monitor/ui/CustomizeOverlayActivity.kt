@@ -2,13 +2,12 @@ package ndika.monitor.ui
 
 import android.graphics.Color
 import android.os.Bundle
-import android.view.Gravity
 import android.widget.SeekBar
 import androidx.appcompat.app.AppCompatActivity
-import ndika.monitor.R
 import ndika.monitor.databinding.ActivityCustomizeOverlayBinding
 import ndika.monitor.model.OverlayConfig
 import ndika.monitor.overlay.StandaloneOverlayService
+import ndika.monitor.ui.dialog.ColorPickerDialog
 import ndika.monitor.util.PreferenceManager
 
 class CustomizeOverlayActivity : AppCompatActivity() {
@@ -46,9 +45,11 @@ class CustomizeOverlayActivity : AppCompatActivity() {
         binding.cbGpuUsage.isChecked = config.showGpuUsage
         binding.cbGpuTemp.isChecked = config.showGpuTemperature
         binding.cbBatTemp.isChecked = config.showBatteryTemperature
+        binding.cbSkinTemp.isChecked = config.showSkinTemperature
         binding.cbBatCur.isChecked = config.showBatteryCurrent
         binding.cbBatVolt.isChecked = config.showBatteryVoltage
         binding.cbBatPwr.isChecked = config.showBatteryPower
+        binding.cbFramePwr.isChecked = config.showFramePower
         binding.cbMemMb.isChecked = config.showMemoryMb
         binding.cbMemPct.isChecked = config.showMemoryPercentage
         binding.cbNetUl.isChecked = config.showUploadSpeed
@@ -56,9 +57,17 @@ class CustomizeOverlayActivity : AppCompatActivity() {
 
         binding.switchDraggable.isChecked = config.isDraggable
         binding.switchBackground.isChecked = config.showBackground
+        binding.switchHideScreenCaptures.isChecked = config.hideFromScreenCaptures
+        binding.switchHideLockScreen.isChecked = config.hideFromLockScreen
 
         binding.seekTextSize.progress = config.textSizeSp
         binding.textTextSizeValue.text = "${config.textSizeSp} sp"
+
+        binding.seekOffsetX.progress = config.offsetX
+        binding.textOffsetXVal.text = "${config.offsetX} dp"
+
+        binding.seekOffsetY.progress = config.offsetY
+        binding.textOffsetYVal.text = "${config.offsetY} dp"
     }
 
     private fun setupListeners() {
@@ -71,9 +80,11 @@ class CustomizeOverlayActivity : AppCompatActivity() {
             config.showGpuUsage = binding.cbGpuUsage.isChecked
             config.showGpuTemperature = binding.cbGpuTemp.isChecked
             config.showBatteryTemperature = binding.cbBatTemp.isChecked
+            config.showSkinTemperature = binding.cbSkinTemp.isChecked
             config.showBatteryCurrent = binding.cbBatCur.isChecked
             config.showBatteryVoltage = binding.cbBatVolt.isChecked
             config.showBatteryPower = binding.cbBatPwr.isChecked
+            config.showFramePower = binding.cbFramePwr.isChecked
             config.showMemoryMb = binding.cbMemMb.isChecked
             config.showMemoryPercentage = binding.cbMemPct.isChecked
             config.showUploadSpeed = binding.cbNetUl.isChecked
@@ -81,6 +92,8 @@ class CustomizeOverlayActivity : AppCompatActivity() {
 
             config.isDraggable = binding.switchDraggable.isChecked
             config.showBackground = binding.switchBackground.isChecked
+            config.hideFromScreenCaptures = binding.switchHideScreenCaptures.isChecked
+            config.hideFromLockScreen = binding.switchHideLockScreen.isChecked
 
             preferenceManager.saveOverlayConfig(config)
             StandaloneOverlayService.reloadConfig(this)
@@ -95,9 +108,11 @@ class CustomizeOverlayActivity : AppCompatActivity() {
         binding.cbGpuUsage.setOnCheckedChangeListener { _, _ -> checkListener() }
         binding.cbGpuTemp.setOnCheckedChangeListener { _, _ -> checkListener() }
         binding.cbBatTemp.setOnCheckedChangeListener { _, _ -> checkListener() }
+        binding.cbSkinTemp.setOnCheckedChangeListener { _, _ -> checkListener() }
         binding.cbBatCur.setOnCheckedChangeListener { _, _ -> checkListener() }
         binding.cbBatVolt.setOnCheckedChangeListener { _, _ -> checkListener() }
         binding.cbBatPwr.setOnCheckedChangeListener { _, _ -> checkListener() }
+        binding.cbFramePwr.setOnCheckedChangeListener { _, _ -> checkListener() }
         binding.cbMemMb.setOnCheckedChangeListener { _, _ -> checkListener() }
         binding.cbMemPct.setOnCheckedChangeListener { _, _ -> checkListener() }
         binding.cbNetUl.setOnCheckedChangeListener { _, _ -> checkListener() }
@@ -105,6 +120,8 @@ class CustomizeOverlayActivity : AppCompatActivity() {
 
         binding.switchDraggable.setOnCheckedChangeListener { _, _ -> checkListener() }
         binding.switchBackground.setOnCheckedChangeListener { _, _ -> checkListener() }
+        binding.switchHideScreenCaptures.setOnCheckedChangeListener { _, _ -> checkListener() }
+        binding.switchHideLockScreen.setOnCheckedChangeListener { _, _ -> checkListener() }
 
         binding.seekTextSize.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
@@ -118,26 +135,73 @@ class CustomizeOverlayActivity : AppCompatActivity() {
             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
+
+        binding.seekOffsetX.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                config.offsetX = progress
+                binding.textOffsetXVal.text = "$progress dp"
+                preferenceManager.saveOverlayConfig(config)
+                StandaloneOverlayService.reloadConfig(this@CustomizeOverlayActivity)
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
+
+        binding.seekOffsetY.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                config.offsetY = progress
+                binding.textOffsetYVal.text = "$progress dp"
+                preferenceManager.saveOverlayConfig(config)
+                StandaloneOverlayService.reloadConfig(this@CustomizeOverlayActivity)
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
+
+        // Color Picker Dialogs
+        binding.btnTextColor.setOnClickListener {
+            ColorPickerDialog(this, config.textColor, showAlpha = true) { selectedColor ->
+                config.textColor = selectedColor
+                preferenceManager.saveOverlayConfig(config)
+                StandaloneOverlayService.reloadConfig(this)
+                updatePreview()
+            }.show()
+        }
+
+        binding.btnBgColor.setOnClickListener {
+            ColorPickerDialog(this, config.backgroundColor, showAlpha = true) { selectedColor ->
+                config.backgroundColor = selectedColor
+                preferenceManager.saveOverlayConfig(config)
+                StandaloneOverlayService.reloadConfig(this)
+                updatePreview()
+            }.show()
+        }
     }
 
     private fun updatePreview() {
         val lines = mutableListOf<String>()
+        val unit = config.temperatureUnit
+        val tempUnitStr = if (unit.equals("fahrenheit", ignoreCase = true)) "°F" else "°C"
+
         if (config.showFps) lines.add("FPS   60.0")
         if (config.showCpuUsage) lines.add("CPU   25.3 %")
         if (config.showCpuFrequency) lines.add("FRQ   2.40 GHz")
-        if (config.showCpuTemperature) lines.add("CPUT  42.0 °C")
+        if (config.showCpuTemperature) lines.add("CPUT  42.0 $tempUnitStr")
         if (config.showGpuUsage) lines.add("GPU   18.5 %")
-        if (config.showGpuTemperature) lines.add("GPUT  40.0 °C")
-        if (config.showBatteryTemperature) lines.add("BAT   34.5 °C")
+        if (config.showGpuTemperature) lines.add("GPUT  40.0 $tempUnitStr")
+        if (config.showBatteryTemperature) lines.add("BAT   34.5 $tempUnitStr")
+        if (config.showSkinTemperature) lines.add("SKIN  33.0 $tempUnitStr")
         if (config.showBatteryCurrent) lines.add("CUR   0.45 A")
         if (config.showBatteryVoltage) lines.add("VOLT  4.10 V")
         if (config.showBatteryPower) lines.add("PWR   1.85 W")
+        if (config.showFramePower) lines.add("FPWR  30.8 mJ")
         if (config.showMemoryMb) lines.add("RAM   3840 MB")
         if (config.showMemoryPercentage) lines.add("MEM   48.0 %")
         if (config.showDownloadSpeed) lines.add("DL    1.5 MB/s")
         if (config.showUploadSpeed) lines.add("UL    120 KB/s")
 
         binding.previewOverlayText.textSize = config.textSizeSp.toFloat()
+        binding.previewOverlayText.setTextColor(config.textColor)
         binding.previewOverlayText.text = if (lines.isNotEmpty()) lines.joinToString("\n") else "FPS   60.0"
 
         if (config.showBackground) {

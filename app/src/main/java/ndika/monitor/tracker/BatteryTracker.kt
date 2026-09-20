@@ -80,7 +80,15 @@ class BatteryTracker(private val context: Context) : ITracker {
         metrics.batteryTemperature = tempC
         metrics.batteryVoltageVolts = voltageV
         metrics.batteryCurrentAmp = currentA
-        metrics.batteryPowerWatts = voltageV * currentA
+        val powerWatts = voltageV * currentA
+        metrics.batteryPowerWatts = powerWatts
+
+        // Calculate power consumption per frame in milliJoules (mJ = W * 1000 / FPS)
+        if (metrics.fps > 0f && powerWatts > 0f) {
+            metrics.framePowerMilliJoules = (powerWatts * 1000.0f) / metrics.fps
+        } else {
+            metrics.framePowerMilliJoules = 0.0f
+        }
     }
 
     private fun detectBatterySysfsPaths() {

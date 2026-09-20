@@ -4,7 +4,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.Choreographer
 import ndika.monitor.model.PerformanceMetrics
-import java.util.concurrent.atomic.AtomicInteger
+import ndika.monitor.recorder.SessionRecorder
 
 class FpsTracker : ITracker, Choreographer.FrameCallback {
 
@@ -38,6 +38,9 @@ class FpsTracker : ITracker, Choreographer.FrameCallback {
             if (deltaNanos > 0L) {
                 frameTimes[frameIndex % frameTimes.size] = deltaNanos
                 frameIndex++
+                // Pass frame delta in ms to SessionRecorder
+                val deltaMs = deltaNanos / 1_000_000.0f
+                SessionRecorder.recordFrameTime(deltaMs)
             }
         }
         lastFrameTimeNanos = frameTimeNanos

@@ -14,9 +14,11 @@ data class OverlayConfig(
     var showGpuUsage: Boolean = true,
     var showGpuTemperature: Boolean = false,
     var showBatteryTemperature: Boolean = true,
+    var showSkinTemperature: Boolean = false,
     var showBatteryCurrent: Boolean = false,
     var showBatteryVoltage: Boolean = false,
     var showBatteryPower: Boolean = false,
+    var showFramePower: Boolean = false,
     var showMemoryMb: Boolean = false,
     var showMemoryPercentage: Boolean = false,
     var showUploadSpeed: Boolean = false,
@@ -34,7 +36,11 @@ data class OverlayConfig(
     var paddingDp: Int = 8,
     var cornerRadiusDp: Float = 12f,
     var updateIntervalMs: Long = 1000L,
-    var isDraggable: Boolean = true
+    var isDraggable: Boolean = true,
+
+    var hideFromScreenCaptures: Boolean = false,
+    var hideFromLockScreen: Boolean = false,
+    var temperatureUnit: String = "celsius"
 ) : Serializable {
 
     fun toBundle(): Bundle {
@@ -47,9 +53,11 @@ data class OverlayConfig(
             putBoolean("show_gpu_usage", showGpuUsage)
             putBoolean("show_gpu_temp", showGpuTemperature)
             putBoolean("show_bat_temp", showBatteryTemperature)
+            putBoolean("show_skin_temp", showSkinTemperature)
             putBoolean("show_bat_cur", showBatteryCurrent)
             putBoolean("show_bat_volt", showBatteryVoltage)
             putBoolean("show_bat_pwr", showBatteryPower)
+            putBoolean("show_frame_pwr", showFramePower)
             putBoolean("show_mem_mb", showMemoryMb)
             putBoolean("show_mem_pct", showMemoryPercentage)
             putBoolean("show_ul", showUploadSpeed)
@@ -66,6 +74,10 @@ data class OverlayConfig(
             putInt("offset_y", offsetY)
             putLong("interval", updateIntervalMs)
             putBoolean("draggable", isDraggable)
+
+            putBoolean("hide_screen_captures", hideFromScreenCaptures)
+            putBoolean("hide_lock_screen", hideFromLockScreen)
+            putString("temp_unit", temperatureUnit)
         }
     }
 
@@ -81,9 +93,11 @@ data class OverlayConfig(
                 showGpuUsage = bundle.getBoolean("show_gpu_usage", true),
                 showGpuTemperature = bundle.getBoolean("show_gpu_temp", false),
                 showBatteryTemperature = bundle.getBoolean("show_bat_temp", true),
+                showSkinTemperature = bundle.getBoolean("show_skin_temp", false),
                 showBatteryCurrent = bundle.getBoolean("show_bat_cur", false),
                 showBatteryVoltage = bundle.getBoolean("show_bat_volt", false),
                 showBatteryPower = bundle.getBoolean("show_bat_pwr", false),
+                showFramePower = bundle.getBoolean("show_frame_pwr", false),
                 showMemoryMb = bundle.getBoolean("show_mem_mb", false),
                 showMemoryPercentage = bundle.getBoolean("show_mem_pct", false),
                 showUploadSpeed = bundle.getBoolean("show_ul", false),
@@ -99,7 +113,11 @@ data class OverlayConfig(
                 offsetX = bundle.getInt("offset_x", 16),
                 offsetY = bundle.getInt("offset_y", 16),
                 updateIntervalMs = bundle.getLong("interval", 1000L),
-                isDraggable = bundle.getBoolean("draggable", true)
+                isDraggable = bundle.getBoolean("draggable", true),
+
+                hideFromScreenCaptures = bundle.getBoolean("hide_screen_captures", false),
+                hideFromLockScreen = bundle.getBoolean("hide_lock_screen", false),
+                temperatureUnit = bundle.getString("temp_unit", "celsius") ?: "celsius"
             )
         }
     }

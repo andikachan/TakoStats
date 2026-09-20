@@ -21,9 +21,11 @@ class PreferenceManager(context: Context) {
             showGpuUsage = prefs.getBoolean("show_gpu_usage", true),
             showGpuTemperature = prefs.getBoolean("show_gpu_temp", false),
             showBatteryTemperature = prefs.getBoolean("show_bat_temp", true),
+            showSkinTemperature = prefs.getBoolean("show_skin_temp", false),
             showBatteryCurrent = prefs.getBoolean("show_bat_cur", false),
             showBatteryVoltage = prefs.getBoolean("show_bat_volt", false),
             showBatteryPower = prefs.getBoolean("show_bat_pwr", false),
+            showFramePower = prefs.getBoolean("show_frame_pwr", false),
             showMemoryMb = prefs.getBoolean("show_mem_mb", false),
             showMemoryPercentage = prefs.getBoolean("show_mem_pct", false),
             showUploadSpeed = prefs.getBoolean("show_ul", false),
@@ -39,7 +41,11 @@ class PreferenceManager(context: Context) {
             offsetX = prefs.getInt("offset_x", 16),
             offsetY = prefs.getInt("offset_y", 16),
             updateIntervalMs = prefs.getString("update_interval", "1000")?.toLongOrNull() ?: 1000L,
-            isDraggable = prefs.getBoolean("is_draggable", true)
+            isDraggable = prefs.getBoolean("is_draggable", true),
+
+            hideFromScreenCaptures = prefs.getBoolean("hide_screen_captures", false),
+            hideFromLockScreen = prefs.getBoolean("hide_lock_screen", false),
+            temperatureUnit = prefs.getString("temperature_unit", "celsius") ?: "celsius"
         )
     }
 
@@ -53,9 +59,11 @@ class PreferenceManager(context: Context) {
             putBoolean("show_gpu_usage", config.showGpuUsage)
             putBoolean("show_gpu_temp", config.showGpuTemperature)
             putBoolean("show_bat_temp", config.showBatteryTemperature)
+            putBoolean("show_skin_temp", config.showSkinTemperature)
             putBoolean("show_bat_cur", config.showBatteryCurrent)
             putBoolean("show_bat_volt", config.showBatteryVoltage)
             putBoolean("show_bat_pwr", config.showBatteryPower)
+            putBoolean("show_frame_pwr", config.showFramePower)
             putBoolean("show_mem_mb", config.showMemoryMb)
             putBoolean("show_mem_pct", config.showMemoryPercentage)
             putBoolean("show_ul", config.showUploadSpeed)
@@ -70,6 +78,10 @@ class PreferenceManager(context: Context) {
             putInt("offset_x", config.offsetX)
             putInt("offset_y", config.offsetY)
             putBoolean("is_draggable", config.isDraggable)
+
+            putBoolean("hide_screen_captures", config.hideFromScreenCaptures)
+            putBoolean("hide_lock_screen", config.hideFromLockScreen)
+            putString("temperature_unit", config.temperatureUnit)
             apply()
         }
     }
@@ -92,4 +104,12 @@ class PreferenceManager(context: Context) {
     var isServiceRunning: Boolean
         get() = prefs.getBoolean("service_running", false)
         set(value) = prefs.edit().putBoolean("service_running", value).apply()
+
+    var isRecordingRunning: Boolean
+        get() = prefs.getBoolean("recording_running", false)
+        set(value) = prefs.edit().putBoolean("recording_running", value).apply()
+
+    var targetApps: Set<String>
+        get() = prefs.getStringSet("target_apps_set", emptySet()) ?: emptySet()
+        set(value) = prefs.edit().putStringSet("target_apps_set", value).apply()
 }

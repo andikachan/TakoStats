@@ -3,6 +3,14 @@
     <PreferenceCategory app:title="@string/general">
 
         <ListPreference
+            app:defaultValue="celsius"
+            app:entries="@array/temperature_unit_entries"
+            app:entryValues="@array/temperature_unit_values"
+            app:key="temperature_unit"
+            app:title="@string/temperature_unit"
+            app:useSimpleSummaryProvider="true" />
+
+        <ListPreference
             app:defaultValue="1000"
             app:entries="@array/interval_entries"
             app:entryValues="@array/interval_values"
@@ -30,7 +38,7 @@
 
         <Preference
             app:key="version"
-            app:summary="3.1.5"
+            app:summary="1.1.0"
             app:title="@string/version" />
 
         <Preference
