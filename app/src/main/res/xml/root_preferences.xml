@@ -1,0 +1,43 @@
+<PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory app:title="@string/general">
+
+        <ListPreference
+            app:defaultValue="1000"
+            app:entries="@array/interval_entries"
+            app:entryValues="@array/interval_values"
+            app:key="update_interval"
+            app:title="@string/update_interval"
+            app:useSimpleSummaryProvider="true" />
+
+        <ListPreference
+            app:defaultValue="top_right"
+            app:entries="@array/position_entries"
+            app:entryValues="@array/position_values"
+            app:key="overlay_position"
+            app:title="@string/default_position"
+            app:useSimpleSummaryProvider="true" />
+
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:key="is_draggable"
+            app:summary="@string/drag_to_move_summary"
+            app:title="@string/drag_to_move" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="@string/about">
+
+        <Preference
+            app:key="version"
+            app:summary="3.1.5"
+            app:title="@string/version" />
+
+        <Preference
+            app:key="github"
+            app:summary="https://github.com/andikachan/TakoStats"
+            app:title="GitHub Repository" />
+
+    </PreferenceCategory>
+
+</PreferenceScreen>

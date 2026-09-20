@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="interval_entries">
+        <item>500 ms (Fast)</item>
+        <item>1000 ms (Normal)</item>
+        <item>2000 ms (Battery Saver)</item>
+    </string-array>
+    
+    <string-array name="interval_values">
+        <item>500</item>
+        <item>1000</item>
+        <item>2000</item>
+    </string-array>
+
+    <string-array name="position_entries">
+        <item>Top Right</item>
+        <item>Top Left</item>
+        <item>Top Center</item>
+        <item>Bottom Right</item>
+        <item>Bottom Left</item>
+        <item>Bottom Center</item>
+        <item>Center</item>
+    </string-array>
+
+    <string-array name="position_values">
+        <item>top_right</item>
+        <item>top_left</item>
+        <item>top_center</item>
+        <item>bottom_right</item>
+        <item>bottom_left</item>
+        <item>bottom_center</item>
+        <item>center</item>
+    </string-array>
+</resources>

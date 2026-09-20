@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#6750A4</color>
+    <color name="on_primary">#FFFFFF</color>
+    <color name="primary_container">#EADDFF</color>
+    <color name="on_primary_container">#21005D</color>
+    
+    <color name="status_active">#4CAF50</color>
+    <color name="status_inactive">#F44336</color>
+    
+    <color name="overlay_default_bg">#A0000000</color>
+    <color name="overlay_default_text">#FFFFFF</color>
+</resources>

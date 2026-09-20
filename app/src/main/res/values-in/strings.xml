@@ -1,0 +1,59 @@
+<resources>
+    <string name="app_name">TakoStats</string>
+    <string name="overlay">Overlay Monitor</string>
+    <string name="service_running">BERJALAN</string>
+    <string name="service_stopped">BERHENTI</string>
+    <string name="permission_granted">Izin Overlay: Diizinkan</string>
+    <string name="permission_missing">Izin Overlay: Belum diizinkan (Ketuk switch untuk mengizinkan)</string>
+    <string name="grant_overlay_permission">Silakan izinkan \"Tampilkan di atas aplikasi lain\"</string>
+    
+    <string name="live_hardware_monitor">Status Perangkat Real-time</string>
+    <string name="cpu">CPU:</string>
+    <string name="gpu">GPU:</string>
+    <string name="battery">Baterai:</string>
+    <string name="memory">RAM:</string>
+
+    <string name="customize_overlay">Kustomisasi Overlay</string>
+    <string name="customize_overlay_summary">Atur metrik, ukuran font, warna, dan tampilan</string>
+    <string name="preview">Pratinjau Overlay</string>
+    <string name="metrics_data">Metrik Performa</string>
+    <string name="metric_fps">FPS (Frame Rate)</string>
+    <string name="metric_layer_name">Nama Layer Game / Aplikasi</string>
+    <string name="metric_cpu_usage">Penggunaan CPU (%)</string>
+    <string name="metric_cpu_freq">Frekuensi CPU (GHz)</string>
+    <string name="metric_cpu_temp">Suhu CPU (°C)</string>
+    <string name="metric_gpu_usage">Penggunaan GPU (%)</string>
+    <string name="metric_gpu_temp">Suhu GPU (°C)</string>
+    <string name="metric_battery_temp">Suhu Baterai (°C)</string>
+    <string name="metric_battery_current">Arus Baterai (A)</string>
+    <string name="metric_battery_voltage">Tegangan Baterai (V)</string>
+    <string name="metric_battery_power">Daya Baterai (W)</string>
+    <string name="metric_memory_mb">Penggunaan RAM (MB)</string>
+    <string name="metric_memory_pct">Penggunaan RAM (%)</string>
+    <string name="metric_download_speed">Kecepatan Unduh (DL)</string>
+    <string name="metric_upload_speed">Kecepatan Unggah (UL)</string>
+
+    <string name="appearance_behavior">Tampilan &amp; Interaksi</string>
+    <string name="text_size">Ukuran Teks</string>
+    <string name="show_background">Tampilkan Latar Belakang Kartu</string>
+    <string name="drag_to_move">Bisa Digeser (Drag &amp; Drop)</string>
+    <string name="drag_to_move_summary">Sentuh dan geser posisi overlay langsung di layar</string>
+
+    <string name="shizuku_status">Akses Privileged Shizuku</string>
+    <string name="shizuku_authorized">Shizuku Terotorisasi (Mode Root/ADB aktif)</string>
+    <string name="shizuku_available_tap_auth">Shizuku berjalan (Ketuk untuk otorisasi)</string>
+    <string name="shizuku_not_running">Shizuku tidak berjalan (Mode Standalone aktif)</string>
+
+    <string name="settings">Pengaturan</string>
+    <string name="settings_summary">Interval refresh, posisi default, dan info aplikasi</string>
+    <string name="general">Umum</string>
+    <string name="update_interval">Interval Pembaruan</string>
+    <string name="default_position">Posisi Default</string>
+    <string name="about">Tentang</string>
+    <string name="version">Versi</string>
+
+    <string name="notification_channel_name">Overlay Performa</string>
+    <string name="notification_channel_desc">Notifikasi layanan overlay TakoStats</string>
+    <string name="overlay_running">Overlay TakoStats Aktif</string>
+    <string name="tap_to_configure">Ketuk untuk mengatur monitor</string>
+</resources>
