@@ -36,6 +36,11 @@ data class PerformanceMetrics(
         }
     }
 
+    fun formatTemperature(celsius: Float, unit: String): String {
+        val isCelsius = !unit.equals("fahrenheit", ignoreCase = true)
+        return formatTemperature(celsius, isCelsius)
+    }
+
     fun toBundle(): Bundle {
         return Bundle().apply {
             putFloat(KEY_FPS, fps)

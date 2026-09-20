@@ -254,7 +254,8 @@ class MainActivity : AppCompatActivity() {
                     binding.textPreviewCpu.text = String.format(Locale.US, "%.1f %% (%.2f GHz)", metrics.cpuUsage, metrics.cpuFrequencyGhz)
                     binding.textPreviewGpu.text = String.format(Locale.US, "%.1f %%", metrics.gpuUsage)
                     val batStr = metrics.formatTemperature(metrics.batteryTemperature, unit)
-                    binding.textPreviewBattery.text = String.format(Locale.US, "%s (%.2f W)", batStr, metrics.batteryPowerWatts)
+                    val pwrStr = if (metrics.batteryPowerWatts != Float.MIN_VALUE) String.format(Locale.US, " (%.2f W)", metrics.batteryPowerWatts) else ""
+                    binding.textPreviewBattery.text = "$batStr$pwrStr"
                     binding.textPreviewMemory.text = String.format(Locale.US, "%d MB (%.1f %%)", metrics.memoryUsageMb, metrics.memoryUsagePercentage)
                 }
                 delay(1000L)
