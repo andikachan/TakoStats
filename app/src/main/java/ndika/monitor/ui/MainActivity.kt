@@ -110,6 +110,11 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // Game Booster Engine Card
+        binding.cardGameBooster.setOnClickListener {
+            ndika.monitor.booster.ui.GameBoosterActivity.start(this)
+        }
+
         // Benchmark Records Card
         binding.cardRecords.setOnClickListener {
             startActivity(Intent(this, RecordListActivity::class.java))

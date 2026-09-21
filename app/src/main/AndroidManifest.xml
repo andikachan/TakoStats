@@ -72,6 +72,13 @@
             android:label="@string/settings"
             android:parentActivityName=".ui.MainActivity" />
 
+        <!-- Game Booster Engine Activity -->
+        <activity
+            android:name=".booster.ui.GameBoosterActivity"
+            android:exported="false"
+            android:label="Game Booster Engine"
+            android:parentActivityName=".ui.MainActivity" />
+
         <!-- Standalone Floating Overlay Service -->
         <service
             android:name=".overlay.StandaloneOverlayService"
