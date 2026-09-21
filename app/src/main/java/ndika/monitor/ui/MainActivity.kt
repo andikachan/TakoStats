@@ -257,9 +257,11 @@ class MainActivity : AppCompatActivity() {
 
                 withContext(Dispatchers.Main) {
                     binding.textPreviewCpu.text = String.format(Locale.US, "%.1f %% (%.2f GHz)", metrics.cpuUsage, metrics.cpuFrequencyGhz)
-                    binding.textPreviewGpu.text = String.format(Locale.US, "%.1f %%", metrics.gpuUsage)
+                    val gpuUsageStr = String.format(Locale.US, "%.1f %%", metrics.gpuUsage)
+                    val gpuTempStr = if (metrics.gpuTemperature > -1000f) " (${metrics.formatTemperature(metrics.gpuTemperature, unit)})" else ""
+                    binding.textPreviewGpu.text = "$gpuUsageStr$gpuTempStr"
                     val batStr = metrics.formatTemperature(metrics.batteryTemperature, unit)
-                    val pwrStr = if (metrics.batteryPowerWatts != Float.MIN_VALUE) String.format(Locale.US, " (%.2f W)", metrics.batteryPowerWatts) else ""
+                    val pwrStr = if (metrics.batteryPowerWatts != Float.MIN_VALUE && metrics.batteryPowerWatts > 0f) String.format(Locale.US, " (%.2f W)", metrics.batteryPowerWatts) else ""
                     binding.textPreviewBattery.text = "$batStr$pwrStr"
                     binding.textPreviewMemory.text = String.format(Locale.US, "%d MB (%.1f %%)", metrics.memoryUsageMb, metrics.memoryUsagePercentage)
                 }
