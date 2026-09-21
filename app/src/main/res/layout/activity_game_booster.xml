@@ -187,7 +187,7 @@
                                 android:id="@+id/tvLowRamWarning"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Low RAM (<400MB)"
+                                android:text="Low RAM (&lt;400MB)"
                                 android:textColor="#E53935"
                                 android:textSize="11sp"
                                 android:textStyle="bold"
