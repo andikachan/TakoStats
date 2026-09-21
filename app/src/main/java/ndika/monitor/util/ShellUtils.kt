@@ -8,8 +8,9 @@ import java.io.InputStreamReader
 object ShellUtils {
 
     fun exec(command: String, preferElevated: Boolean = true): String {
+        val fullCommand = "export PATH=/system/bin:/system/xbin:\$PATH; $command"
         if (preferElevated && ShizukuManager.isPermissionGranted()) {
-            val shizukuRes = execShizuku(command)
+            val shizukuRes = execShizuku(fullCommand)
             if (shizukuRes.isNotEmpty()) {
                 return shizukuRes
             }
@@ -17,7 +18,7 @@ object ShellUtils {
 
         if (preferElevated && isRootAvailable()) {
             try {
-                val process = Runtime.getRuntime().exec(arrayOf("su", "-c", command))
+                val process = Runtime.getRuntime().exec(arrayOf("su", "-c", fullCommand))
                 val reader = BufferedReader(InputStreamReader(process.inputStream))
                 val output = StringBuilder()
                 var line: String?
@@ -31,7 +32,7 @@ object ShellUtils {
         }
 
         return try {
-            val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", command))
+            val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", fullCommand))
             val reader = BufferedReader(InputStreamReader(process.inputStream))
             val output = StringBuilder()
             var line: String?
