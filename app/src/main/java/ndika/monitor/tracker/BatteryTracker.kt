@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import ndika.monitor.model.PerformanceMetrics
+import ndika.monitor.util.ShellUtils
 import java.io.File
 import kotlin.math.abs
 
@@ -42,13 +43,9 @@ class BatteryTracker(private val context: Context) : ITracker {
         if (batteryTempTenths != -100000) {
             metrics.batteryTemperature = batteryTempTenths / 10.0f
         } else if (tempPath != null) {
-            try {
-                val f = File(tempPath!!)
-                if (f.exists() && f.canRead()) {
-                    val raw = f.readText().trim().toFloatOrNull() ?: -100000f
-                    metrics.batteryTemperature = if (raw > 100f) raw / 10.0f else raw
-                }
-            } catch (_: Exception) {}
+            metrics.batteryTemperature = readBatteryTempFromSysfs()
+        } else {
+            metrics.batteryTemperature = -10000.0f
         }
 
         // 3. Read Current in microAmperes
@@ -64,26 +61,15 @@ class BatteryTracker(private val context: Context) : ITracker {
 
         // Fallback sysfs for current
         if (currentMicroAmp == Int.MIN_VALUE && currentNowPath != null) {
-            try {
-                val f = File(currentNowPath!!)
-                if (f.exists() && f.canRead()) {
-                    val raw = f.readText().trim().toIntOrNull() ?: Int.MIN_VALUE
-                    if (raw != Int.MIN_VALUE) {
-                        currentMicroAmp = raw
-                    }
-                }
-            } catch (_: Exception) {}
+            currentMicroAmp = readSysfsInt(currentNowPath!!)
         }
 
         // Fallback sysfs for voltage
         if (voltageMilliVolts <= 0 && voltageNowPath != null) {
-            try {
-                val f = File(voltageNowPath!!)
-                if (f.exists() && f.canRead()) {
-                    val raw = f.readText().trim().toIntOrNull() ?: 0
-                    voltageMilliVolts = if (raw > 100_000) raw / 1000 else raw
-                }
-            } catch (_: Exception) {}
+            val rawVolt = readSysfsInt(voltageNowPath!!)
+            if (rawVolt > 0) {
+                voltageMilliVolts = if (rawVolt > 100_000) rawVolt / 1000 else rawVolt
+            }
         }
 
         // 4. Normalize Current & Check Charging State (Exact TakoStats logic)
@@ -118,9 +104,40 @@ class BatteryTracker(private val context: Context) : ITracker {
         }
     }
 
+    private fun readSysfsInt(path: String): Int {
+        try {
+            val f = File(path)
+            if (f.exists() && f.canRead()) {
+                val num = f.readText().trim().toIntOrNull()
+                if (num != null) return num
+            }
+        } catch (_: Exception) {}
+        val out = ShellUtils.exec("cat $path 2>/dev/null")
+        return out.trim().toIntOrNull() ?: Int.MIN_VALUE
+    }
+
+    private fun readBatteryTempFromSysfs(): Float {
+        val path = tempPath ?: return -10000.0f
+        try {
+            val f = File(path)
+            if (f.exists() && f.canRead()) {
+                val raw = f.readText().trim().toFloatOrNull()
+                if (raw != null) {
+                    return if (raw > 100f) raw / 10.0f else raw
+                }
+            }
+        } catch (_: Exception) {}
+        val out = ShellUtils.exec("cat $path 2>/dev/null")
+        val raw = out.trim().toFloatOrNull() ?: return -10000.0f
+        return if (raw > 100f) raw / 10.0f else raw
+    }
+
     private fun detectBatterySysfsPaths() {
-        val base = "/sys/class/power_supply/battery"
-        val curCandidates = arrayOf("$base/current_now", "$base/batt_current", "/sys/class/power_supply/bms/current_now")
+        val curCandidates = arrayOf(
+            "/sys/class/power_supply/battery/current_now",
+            "/sys/class/power_supply/battery/batt_current",
+            "/sys/class/power_supply/bms/current_now"
+        )
         for (c in curCandidates) {
             if (File(c).exists()) {
                 currentNowPath = c
@@ -128,7 +145,11 @@ class BatteryTracker(private val context: Context) : ITracker {
             }
         }
 
-        val voltCandidates = arrayOf("$base/voltage_now", "$base/batt_vol", "/sys/class/power_supply/bms/voltage_now")
+        val voltCandidates = arrayOf(
+            "/sys/class/power_supply/battery/voltage_now",
+            "/sys/class/power_supply/battery/batt_vol",
+            "/sys/class/power_supply/bms/voltage_now"
+        )
         for (v in voltCandidates) {
             if (File(v).exists()) {
                 voltageNowPath = v
@@ -136,7 +157,11 @@ class BatteryTracker(private val context: Context) : ITracker {
             }
         }
 
-        val tempCandidates = arrayOf("$base/temp", "$base/batt_temp")
+        val tempCandidates = arrayOf(
+            "/sys/class/power_supply/battery/temp",
+            "/sys/class/power_supply/battery/batt_temp",
+            "/sys/class/power_supply/bms/temp"
+        )
         for (t in tempCandidates) {
             if (File(t).exists()) {
                 tempPath = t

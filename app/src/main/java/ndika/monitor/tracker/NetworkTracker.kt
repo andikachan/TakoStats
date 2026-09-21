@@ -10,8 +10,8 @@ class NetworkTracker : ITracker {
     private var lastTimeMs = 0L
 
     override fun update(metrics: PerformanceMetrics) {
-        val currentRx = TrafficStats.getTotalRxBytes()
-        val currentTx = TrafficStats.getTotalTxBytes()
+        val currentRx = try { TrafficStats.getTotalRxBytes() } catch (_: Exception) { 0L }
+        val currentTx = try { TrafficStats.getTotalTxBytes() } catch (_: Exception) { 0L }
         val now = System.currentTimeMillis()
 
         if (lastRxBytes != -1L && lastTimeMs > 0L) {
