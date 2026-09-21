@@ -1,12 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string-array name="interval_entries">
-        <item>500 ms (Fast)</item>
+        <item>250 ms (Ultra Realtime)</item>
+        <item>500 ms (Realtime - Default)</item>
         <item>1000 ms (Normal)</item>
         <item>2000 ms (Battery Saver)</item>
     </string-array>
     
     <string-array name="interval_values">
+        <item>250</item>
         <item>500</item>
         <item>1000</item>
         <item>2000</item>

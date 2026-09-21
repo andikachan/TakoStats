@@ -11,7 +11,7 @@
             app:useSimpleSummaryProvider="true" />
 
         <ListPreference
-            app:defaultValue="1000"
+            app:defaultValue="500"
             app:entries="@array/interval_entries"
             app:entryValues="@array/interval_values"
             app:key="update_interval"

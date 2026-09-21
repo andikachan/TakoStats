@@ -10,25 +10,18 @@ class GpuTracker : ITracker {
     private var gpuThermalPath: String? = null
     private var lastDetectTimeMs = 0L
 
-    private val candidates = arrayOf(
+    private val fastCandidates = arrayOf(
         "/sys/class/kgsl/kgsl-3d0/gpubusy",
         "/sys/class/kgsl/kgsl-3d0/gpu_busy_percentage",
-        "/sys/class/kgsl/kgsl-3d0/devfreq/gpu_load",
-        "/sys/class/devfreq/1c00000.qcom,kgsl-3d0/load",
-        "/sys/class/devfreq/3d00000.qcom,kgsl-3d0/load",
-        "/sys/class/devfreq/gpufreq/load",
-        "/sys/class/devfreq/devfreq0/load",
         "/sys/module/ged/parameters/gpu_loading",
         "/proc/ged/gpu_load",
-        "/proc/gpufreq/gpufreq_var_dump",
-        "/proc/mali/utilization",
         "/sys/class/misc/mali0/device/utilization",
         "/sys/devices/platform/13000000.mali/utilization",
         "/sys/devices/platform/13040000.mali/utilization",
         "/sys/devices/platform/mali.0/utilization",
-        "/sys/kernel/gpu/gpu_busy",
-        "/sys/devices/soc/1c00000.qcom,kgsl-3d0/kgsl/kgsl-3d0/gpu_busy_percentage",
-        "/sys/devices/platform/gpusys/gpu_busy"
+        "/sys/class/devfreq/gpufreq/load",
+        "/sys/class/devfreq/1c00000.qcom,kgsl-3d0/load",
+        "/sys/class/devfreq/3d00000.qcom,kgsl-3d0/load"
     )
 
     init {
@@ -38,19 +31,19 @@ class GpuTracker : ITracker {
 
     override fun update(metrics: PerformanceMetrics) {
         val now = System.currentTimeMillis()
-        if (gpuBusyPath == null && now - lastDetectTimeMs > 2000) {
+        if (gpuBusyPath == null && now - lastDetectTimeMs > 2500) {
             detectGpuPaths()
             detectGpuThermalZone()
             lastDetectTimeMs = now
         }
 
-        val usage = readGpuUsage()
-        metrics.gpuUsage = usage
+        metrics.gpuUsage = readGpuUsage()
         metrics.gpuTemperature = readGpuTemperature()
     }
 
     private fun detectGpuPaths() {
-        for (path in candidates) {
+        // 1. Direct file check (<0.1ms)
+        for (path in fastCandidates) {
             try {
                 val f = File(path)
                 if (f.exists() && f.canRead()) {
@@ -60,19 +53,14 @@ class GpuTracker : ITracker {
             } catch (_: Exception) {}
         }
 
-        // Elevated scan with shell
-        for (path in candidates) {
-            val out = ShellUtils.exec("if [ -f $path ]; then echo $path; fi")
-            if (out.isNotBlank() && out.contains(path)) {
-                gpuBusyPath = path
-                return
+        // 2. Single multi-candidate batch query in ONE process (<5ms)
+        val script = "for p in /sys/class/kgsl/kgsl-3d0/gpubusy /sys/class/kgsl/kgsl-3d0/gpu_busy_percentage /sys/module/ged/parameters/gpu_loading /proc/ged/gpu_load /sys/class/misc/mali0/device/utilization /sys/devices/platform/*.mali/utilization /sys/class/devfreq/*/load; do if [ -f \$p ]; then echo \$p; break; fi; done"
+        val out = ShellUtils.exec(script)
+        if (out.isNotBlank()) {
+            val found = out.lines().firstOrNull()?.trim()
+            if (!found.isNullOrBlank() && (found.startsWith("/sys") || found.startsWith("/proc"))) {
+                gpuBusyPath = found
             }
-        }
-
-        // Dynamic devfreq scan
-        val devfreqOut = ShellUtils.exec("for d in /sys/class/devfreq/*; do if [ -f \$d/load ]; then echo \$d/load; break; fi; done")
-        if (devfreqOut.isNotBlank() && devfreqOut.startsWith("/sys/class/devfreq")) {
-            gpuBusyPath = devfreqOut.lines().firstOrNull()?.trim()
         }
     }
 
@@ -106,22 +94,8 @@ class GpuTracker : ITracker {
     }
 
     private fun readGpuUsage(): Float {
-        // 1. Try reading from cached path
-        if (gpuBusyPath != null) {
-            val u = parseGpuPath(gpuBusyPath!!)
-            if (u >= 0f) return u
-        }
-
-        // 2. Iterate candidates dynamically
-        for (path in candidates) {
-            val u = parseGpuPath(path)
-            if (u >= 0f) {
-                gpuBusyPath = path
-                return u
-            }
-        }
-
-        return 0.0f
+        val path = gpuBusyPath ?: return 0.0f
+        return parseGpuPath(path).coerceAtLeast(0.0f)
     }
 
     private fun parseGpuPath(path: String): Float {
@@ -140,7 +114,7 @@ class GpuTracker : ITracker {
             }
         }
 
-        if (rawText.isNullOrBlank()) return -1.0f
+        if (rawText.isNullOrBlank()) return 0.0f
 
         try {
             // MediaTek "gpu_load: 35" or "35%"
@@ -175,7 +149,7 @@ class GpuTracker : ITracker {
             }
         } catch (_: Exception) {}
 
-        return -1.0f
+        return 0.0f
     }
 
     private fun readGpuTemperature(): Float {

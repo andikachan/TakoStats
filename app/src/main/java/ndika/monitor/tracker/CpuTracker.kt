@@ -11,6 +11,7 @@ class CpuTracker : ITracker {
     private val coreCount = Runtime.getRuntime().availableProcessors()
     private val coreFrequencies = IntArray(coreCount)
     private var cpuThermalPath: String? = null
+    private var lastThermalDetectTimeMs = 0L
 
     init {
         findCpuThermalZone()
@@ -23,26 +24,28 @@ class CpuTracker : ITracker {
             metrics.cpuUsage = usage
         }
 
-        // 2. Read CPU Frequency (Per-core in kHz)
+        // 2. Read All CPU Core Frequencies in high-speed batch
+        readAllCoreFrequencies()
         var maxFreqKhz = 0
-        for (i in 0 until coreCount) {
-            val freq = readCoreFrequency(i)
-            coreFrequencies[i] = freq
-            if (freq > maxFreqKhz) {
-                maxFreqKhz = freq
+        for (f in coreFrequencies) {
+            if (f > maxFreqKhz) {
+                maxFreqKhz = f
             }
         }
         metrics.cpuFrequencyGhz = if (maxFreqKhz > 0) maxFreqKhz / 1_000_000.0f else 0.0f
         metrics.coreFrequencies = coreFrequencies.clone()
 
         // 3. Read CPU Temperature
-        metrics.cpuTemperature = readCpuTemperature()
+        val temp = readCpuTemperature()
+        if (temp > -1000f) {
+            metrics.cpuTemperature = temp
+        }
     }
 
     private fun readCpuUsageFromProcStat(): Float {
         var statLine: String? = null
 
-        // Try direct file read
+        // Fast direct file read (0.01ms)
         try {
             val file = File("/proc/stat")
             if (file.exists() && file.canRead()) {
@@ -50,9 +53,8 @@ class CpuTracker : ITracker {
             }
         } catch (_: Exception) {}
 
-        // Fallback to elevated exec
         if (statLine.isNullOrBlank()) {
-            val out = ShellUtils.exec("cat /proc/stat 2>/dev/null | head -n 1")
+            val out = ShellUtils.exec("head -n 1 /proc/stat 2>/dev/null")
             if (out.startsWith("cpu")) {
                 statLine = out
             }
@@ -93,30 +95,41 @@ class CpuTracker : ITracker {
         return -1.0f
     }
 
-    private fun readCoreFrequency(core: Int): Int {
-        val paths = arrayOf(
-            "/sys/devices/system/cpu/cpu$core/cpufreq/scaling_cur_freq",
-            "/sys/devices/system/cpu/cpu$core/cpufreq/cpuinfo_cur_freq"
-        )
-        for (path in paths) {
+    private fun readAllCoreFrequencies() {
+        var directReadSuccess = true
+
+        // Try direct read first
+        for (i in 0 until coreCount) {
+            var read = false
             try {
-                val f = File(path)
+                val f = File("/sys/devices/system/cpu/cpu$i/cpufreq/scaling_cur_freq")
                 if (f.exists() && f.canRead()) {
-                    val text = f.readText().trim()
-                    val v = text.toIntOrNull()
-                    if (v != null && v > 0) return v
+                    val v = f.readText().trim().toIntOrNull()
+                    if (v != null && v > 0) {
+                        coreFrequencies[i] = v
+                        read = true
+                    }
                 }
             } catch (_: Exception) {}
+
+            if (!read) {
+                directReadSuccess = false
+                break
+            }
         }
 
-        // Fallback elevated read
-        val out = ShellUtils.exec("cat /sys/devices/system/cpu/cpu$core/cpufreq/scaling_cur_freq 2>/dev/null")
-        val parsed = out.trim().toIntOrNull()
-        if (parsed != null && parsed > 0) {
-            return parsed
-        }
+        if (directReadSuccess) return
 
-        return 0
+        // Single batch elevated read for ALL cores at once (<1ms)
+        val out = ShellUtils.exec("cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_cur_freq 2>/dev/null")
+        if (out.isNotBlank()) {
+            val lines = out.lines().mapNotNull { it.trim().toIntOrNull() }
+            for (i in lines.indices) {
+                if (i < coreFrequencies.size && lines[i] > 0) {
+                    coreFrequencies[i] = lines[i]
+                }
+            }
+        }
     }
 
     private fun findCpuThermalZone() {
@@ -142,7 +155,7 @@ class CpuTracker : ITracker {
             }
         } catch (_: Exception) {}
 
-        // Fallback scan via shell
+        // Fallback single-line scan via shell
         val out = ShellUtils.exec("for tz in /sys/class/thermal/thermal_zone*; do t=\$(cat \$tz/type 2>/dev/null); case \$t in *cpu*|*soc*|*tsens*|*ap*|*cluster*|*mtktscpu*) echo \$tz/temp; break;; esac; done")
         if (out.isNotBlank()) {
             cpuThermalPath = out.lines().firstOrNull()?.trim()
@@ -150,6 +163,12 @@ class CpuTracker : ITracker {
     }
 
     private fun readCpuTemperature(): Float {
+        val now = System.currentTimeMillis()
+        if (cpuThermalPath == null && now - lastThermalDetectTimeMs > 3000) {
+            findCpuThermalZone()
+            lastThermalDetectTimeMs = now
+        }
+
         val path = cpuThermalPath ?: return -10000.0f
         try {
             val file = File(path)

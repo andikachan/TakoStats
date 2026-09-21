@@ -35,7 +35,7 @@ data class OverlayConfig(
     var offsetY: Int = 16,
     var paddingDp: Int = 8,
     var cornerRadiusDp: Float = 12f,
-    var updateIntervalMs: Long = 1000L,
+    var updateIntervalMs: Long = 500L,
     var isDraggable: Boolean = true,
 
     var hideFromScreenCaptures: Boolean = false,
