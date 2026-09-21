@@ -187,6 +187,7 @@ class CustomizeOverlayActivity : AppCompatActivity() {
         if (config.showCpuUsage) items.add(Item("CPU", "25.3", " %"))
         if (config.showCpuTemperature) items.add(Item("CPU", "42.0", tempUnitStr))
         if (config.showCpuFrequency) items.add(Item("CPU0", "2400", " MHz"))
+        if (config.showGpuUsage) items.add(Item("GPU", "15.0", " %"))
         if (config.showGpuTemperature) items.add(Item("GPU", "40.0", tempUnitStr))
         if (config.showBatteryTemperature) items.add(Item("BAT", "34.5", tempUnitStr))
         if (config.showSkinTemperature) items.add(Item("SKN", "33.0", tempUnitStr))
@@ -223,6 +224,10 @@ class CustomizeOverlayActivity : AppCompatActivity() {
             val uPad = maxUnitLen - item.unit.length
             for (i in 0 until uPad) sb.append(' ')
             sb.append('\n')
+        }
+
+        if (config.showLayerName) {
+            sb.append("com.example.game\nMainActivity\n")
         }
 
         val text = if (sb.isNotEmpty()) sb.substring(0, sb.length - 1) else "FPS   60.0"
