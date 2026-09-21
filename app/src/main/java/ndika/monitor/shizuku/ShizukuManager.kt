@@ -1,6 +1,5 @@
 package ndika.monitor.shizuku
 
-import android.content.Context
 import android.content.pm.PackageManager
 import rikka.shizuku.Shizuku
 
@@ -33,4 +32,25 @@ object ShizukuManager {
             }
         } catch (_: Exception) {}
     }
+
+    fun newProcess(cmd: Array<String>): Process? {
+        if (!isPermissionGranted()) return null
+        return try {
+            Shizuku.newProcess(cmd, null, null)
+        } catch (_: Exception) {
+            try {
+                val method = Shizuku::class.java.getDeclaredMethod(
+                    "newProcess",
+                    Array<String>::class.java,
+                    Array<String>::class.java,
+                    String::class.java
+                )
+                method.isAccessible = true
+                method.invoke(null, cmd, null, null) as? Process
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
 }
+

@@ -254,8 +254,8 @@ class OverlayWindow(
 
         // 8. FPS
         if (config.showFps) {
-            val fps = if (metrics.fps >= 0f) metrics.fps else 60.0f
-            items.add(MetricItem("FPS", String.format(Locale.ROOT, "%.1f", fps), ""))
+            val fpsStr = if (metrics.fps >= 0f) String.format(Locale.ROOT, "%.1f", metrics.fps) else "--.-"
+            items.add(MetricItem("FPS", fpsStr, ""))
         }
 
         // 9. MEM (MB)
@@ -353,19 +353,21 @@ class OverlayWindow(
         if (config.showLayerName) {
             val formattedLayer = if (metrics.layerName.isNotBlank()) {
                 val raw = metrics.layerName
-                val slashIdx = raw.indexOf('/')
+                val clean = raw.removePrefix("SurfaceView[").substringBefore("]#0").substringBefore("]")
+                val cleanNoHash = clean.substringBefore("#0")
+                val slashIdx = cleanNoHash.indexOf('/')
                 if (slashIdx != -1) {
-                    val pkg = raw.substring(0, slashIdx)
-                    var cls = raw.substring(slashIdx + 1)
+                    val pkg = cleanNoHash.substring(0, slashIdx)
+                    var cls = cleanNoHash.substring(slashIdx + 1)
                     if (cls.startsWith("$pkg.")) {
                         cls = cls.substring(pkg.length + 1)
                     }
                     "$pkg\n$cls"
                 } else {
-                    raw
+                    cleanNoHash
                 }
             } else {
-                "com.android.systemui\nSystemUI"
+                "No Layer Detected"
             }
             secondaryTextView?.text = formattedLayer
             secondaryTextView?.visibility = View.VISIBLE

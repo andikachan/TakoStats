@@ -1,174 +1,261 @@
 package ndika.monitor.tracker
 
-import android.os.Handler
-import android.os.Looper
 import android.os.SystemClock
-import android.view.Choreographer
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import ndika.monitor.model.PerformanceMetrics
 import ndika.monitor.recorder.SessionRecorder
+import ndika.monitor.shizuku.ShizukuManager
 import ndika.monitor.util.ShellUtils
+import java.util.Collections
 
-class FpsTracker : ITracker, Choreographer.FrameCallback {
+class FpsTracker : ITracker {
 
-    private val handler = Handler(Looper.getMainLooper())
+    private val scope = CoroutineScope(Dispatchers.IO + Job())
+    private var trackingJob: Job? = null
     private var isRunning = false
-    private var lastFrameTimeNanos = 0L
-    private var frameCount = 0
-    private var lastCalculationTimeMs = 0L
 
     @Volatile
-    private var currentFps = 60.0f
+    private var currentFps = -1.0f
+
     @Volatile
     private var currentLayerName = ""
 
-    private val frameTimes = LongArray(120)
-    private var frameIndex = 0
-    private var lastSurfaceFlingerTimestamp = 0L
+    @Volatile
+    private var currentPackageName = ""
+
+    private var lastSeenTimestampNanos = 0L
+    private var lastFrameReceivedTimeMs = 0L
+    private var lastLayerScanTimeMs = 0L
+
+    private val recentFrameTimes = Collections.synchronizedList(mutableListOf<Float>())
+    private val maxFrameHistory = 120
 
     override fun start() {
         if (isRunning) return
         isRunning = true
-        handler.post {
-            lastFrameTimeNanos = 0L
-            frameCount = 0
-            lastCalculationTimeMs = SystemClock.uptimeMillis()
-            Choreographer.getInstance().postFrameCallback(this)
+        lastSeenTimestampNanos = 0L
+        lastFrameReceivedTimeMs = SystemClock.uptimeMillis()
+        lastLayerScanTimeMs = 0L
+        recentFrameTimes.clear()
+
+        startPollingLoop()
+    }
+
+    private fun startPollingLoop() {
+        trackingJob?.cancel()
+        trackingJob = scope.launch {
+            while (isActive && isRunning) {
+                try {
+                    val isElevated = ShizukuManager.isPermissionGranted() || ShellUtils.isRootAvailable()
+                    if (!isElevated) {
+                        currentFps = -1.0f
+                        currentLayerName = ""
+                        delay(1000L)
+                        continue
+                    }
+
+                    val now = SystemClock.uptimeMillis()
+
+                    // Re-scan active layer if needed (every 2.5s or if no layer/stale frames)
+                    if (currentLayerName.isBlank() || (now - lastLayerScanTimeMs > 2500) || (now - lastFrameReceivedTimeMs > 2000)) {
+                        findActiveSurfaceFlingerLayer()
+                        lastLayerScanTimeMs = now
+                    }
+
+                    if (currentLayerName.isNotBlank()) {
+                        pollSurfaceFlingerLatency(currentLayerName)
+                    }
+
+                    // Check for frozen/static screen (no new frames for > 1500ms)
+                    if (now - lastFrameReceivedTimeMs > 1500 && lastSeenTimestampNanos > 0L) {
+                        currentFps = 0.0f
+                    }
+                } catch (_: Exception) {}
+
+                delay(250L) // Fast, responsive polling
+            }
         }
     }
 
-    override fun doFrame(frameTimeNanos: Long) {
-        if (!isRunning) return
-
-        if (lastFrameTimeNanos > 0L) {
-            val deltaNanos = frameTimeNanos - lastFrameTimeNanos
-            if (deltaNanos > 0L) {
-                frameTimes[frameIndex % frameTimes.size] = deltaNanos
-                frameIndex++
-                val deltaMs = deltaNanos / 1_000_000.0f
-                SessionRecorder.recordFrameTime(deltaMs)
+    private fun findActiveSurfaceFlingerLayer() {
+        // 1. Get focused window/activity info
+        var fgPkg = ""
+        val focusOut = ShellUtils.exec("dumpsys window 2>/dev/null | grep -E 'mCurrentFocus|mFocusedApp'")
+        if (focusOut.isNotBlank()) {
+            val match = Regex("([a-zA-Z0-9_.]+)/([a-zA-Z0-9_.]+)").find(focusOut)
+            if (match != null) {
+                fgPkg = match.groupValues[1]
             }
         }
-        lastFrameTimeNanos = frameTimeNanos
-        frameCount++
 
-        val now = SystemClock.uptimeMillis()
-        val elapsed = now - lastCalculationTimeMs
-        if (elapsed >= 500) {
-            val samples = minOf(frameIndex, frameTimes.size)
-            if (samples > 0) {
-                var totalNanos = 0L
-                for (i in 0 until samples) {
-                    totalNanos += frameTimes[i]
-                }
-                if (totalNanos > 0) {
-                    val avgDeltaSec = (totalNanos.toDouble() / samples) / 1_000_000_000.0
-                    currentFps = (1.0 / avgDeltaSec).toFloat().coerceIn(0.0f, 240.0f)
-                }
-            } else {
-                currentFps = (frameCount * 1000.0f / elapsed).coerceIn(0.0f, 240.0f)
-            }
-            frameCount = 0
-            lastCalculationTimeMs = now
-        }
-
-        Choreographer.getInstance().postFrameCallback(this)
-    }
-
-    override fun update(metrics: PerformanceMetrics) {
-        // 1. Query active foreground app / layer
-        val layer = queryActiveLayerName()
-        if (layer.isNotBlank()) {
-            metrics.layerName = layer
-            currentLayerName = layer
-        } else if (currentLayerName.isNotBlank()) {
-            metrics.layerName = currentLayerName
-        }
-
-        // 2. Query hardware game/app FPS from SurfaceFlinger
-        val sfFps = querySurfaceFlingerFps(metrics.layerName)
-        if (sfFps > 0.0f) {
-            metrics.fps = sfFps
-        } else {
-            metrics.fps = currentFps
-        }
-    }
-
-    private fun querySurfaceFlingerFps(layerName: String): Float {
-        try {
-            // First try with explicit layer name, then fallback to global SurfaceFlinger latency
-            var out = ""
-            if (layerName.isNotBlank()) {
-                val pkg = if (layerName.contains("/")) layerName.substringBefore("/") else layerName
-                out = ShellUtils.exec("dumpsys SurfaceFlinger --latency \"$layerName\" 2>/dev/null || dumpsys SurfaceFlinger --latency \"$pkg\" 2>/dev/null")
-            }
-            if (out.isBlank() || out.lines().size < 3) {
-                out = ShellUtils.exec("dumpsys SurfaceFlinger --latency 2>/dev/null | tail -n 120")
-            }
-
-            if (out.isBlank()) return -1.0f
-
-            val lines = out.lines()
-            if (lines.size < 5) return -1.0f
-
-            val timestamps = mutableListOf<Long>()
-            for (line in lines) {
-                val parts = line.trim().split("\\s+".toRegex())
-                if (parts.size >= 3) {
-                    val presentTime = parts[1].toLongOrNull() ?: 0L
-                    if (presentTime > 0L && presentTime != Long.MAX_VALUE && presentTime != 0x7fffffffffffffffL) {
-                        timestamps.add(presentTime)
+        if (fgPkg.isBlank() || fgPkg.contains("systemui", ignoreCase = true) || fgPkg.contains("ndika.monitor", ignoreCase = true)) {
+            val actOut = ShellUtils.exec("dumpsys activity activities 2>/dev/null | grep -E 'mResumedActivity|topResumedActivity'")
+            if (actOut.isNotBlank()) {
+                val match = Regex("([a-zA-Z0-9_.]+)/([a-zA-Z0-9_.]+)").find(actOut)
+                if (match != null) {
+                    val p = match.groupValues[1]
+                    if (!p.contains("systemui", ignoreCase = true) && !p.contains("ndika.monitor", ignoreCase = true)) {
+                        fgPkg = p
                     }
                 }
             }
+        }
 
-            if (timestamps.size >= 2) {
-                val validTimestamps = if (lastSurfaceFlingerTimestamp > 0L) {
-                    timestamps.filter { it > lastSurfaceFlingerTimestamp }
-                } else {
-                    timestamps.takeLast(60)
+        if (fgPkg.isNotBlank()) {
+            currentPackageName = fgPkg
+        }
+
+        // 2. Query SurfaceFlinger layer list
+        val sfListOut = ShellUtils.exec("dumpsys SurfaceFlinger --list 2>/dev/null")
+        if (sfListOut.isBlank()) {
+            return
+        }
+
+        val lines = sfListOut.lines().map { it.trim() }.filter { it.isNotBlank() }
+        var matchedLayer: String? = null
+
+        // If we have a target foreground package
+        if (fgPkg.isNotBlank()) {
+            // Priority 1: SurfaceView with package name (game render surface)
+            matchedLayer = lines.firstOrNull { l ->
+                l.contains(fgPkg, ignoreCase = true) &&
+                        l.contains("surfaceview", ignoreCase = true) &&
+                        !l.startsWith("Background", ignoreCase = true) &&
+                        !l.startsWith("Dim", ignoreCase = true) &&
+                        !l.startsWith("Snapshot", ignoreCase = true)
+            }
+
+            // Priority 2: Main Activity / Window layer for package
+            if (matchedLayer == null) {
+                matchedLayer = lines.firstOrNull { l ->
+                    l.contains(fgPkg, ignoreCase = true) &&
+                            !l.startsWith("Background", ignoreCase = true) &&
+                            !l.startsWith("Dim", ignoreCase = true) &&
+                            !l.startsWith("Snapshot", ignoreCase = true) &&
+                            !l.contains("Overlay", ignoreCase = true)
                 }
+            }
+        }
 
-                if (validTimestamps.isNotEmpty()) {
-                    lastSurfaceFlingerTimestamp = validTimestamps.last()
-                    if (validTimestamps.size >= 2) {
-                        val durationNanos = validTimestamps.last() - validTimestamps.first()
-                        if (durationNanos > 0) {
-                            val fps = ((validTimestamps.size - 1) * 1_000_000_000.0 / durationNanos).toFloat()
-                            return fps.coerceIn(0.0f, 240.0f)
+        // Fallback: Pick top visible non-system layer
+        if (matchedLayer == null) {
+            val systemBlacklist = arrayOf(
+                "StatusBar", "NavigationBar", "NotificationShade", "InputMethod",
+                "ScreenDecor", "TakoStats", "ndika.monitor", "Magnification",
+                "PointerLocation", "Wallpaper", "Letterbox", "Dim Layer", "Background for"
+            )
+            matchedLayer = lines.firstOrNull { l ->
+                systemBlacklist.none { sys -> l.contains(sys, ignoreCase = true) }
+            }
+        }
+
+        if (matchedLayer != null && matchedLayer != currentLayerName) {
+            currentLayerName = matchedLayer
+            lastSeenTimestampNanos = 0L // Reset timestamp bookmark for new layer
+        }
+    }
+
+    private fun pollSurfaceFlingerLatency(layerName: String) {
+        val out = ShellUtils.exec("dumpsys SurfaceFlinger --latency \"$layerName\" 2>/dev/null")
+        if (out.isBlank()) return
+
+        val lines = out.lines().map { it.trim() }.filter { it.isNotBlank() }
+        if (lines.size < 2) return
+
+        val timestamps = mutableListOf<Long>()
+        for (i in 1 until lines.size) {
+            val parts = lines[i].split("\\s+".toRegex())
+            if (parts.size >= 3) {
+                val presentTime = parts[1].toLongOrNull() ?: 0L
+                // 0 or Long.MAX_VALUE (0x7fffffffffffffffL) indicates dropped or unpresented frame
+                if (presentTime > 0L && presentTime != Long.MAX_VALUE && presentTime != 0x7fffffffffffffffL) {
+                    timestamps.add(presentTime)
+                }
+            }
+        }
+
+        if (timestamps.isEmpty()) return
+
+        val newTimestamps = if (lastSeenTimestampNanos > 0L) {
+            timestamps.filter { it > lastSeenTimestampNanos }
+        } else {
+            // Initial seed: take the last batch of valid frames
+            timestamps.takeLast(60)
+        }
+
+        if (newTimestamps.isNotEmpty()) {
+            val nowMs = SystemClock.uptimeMillis()
+            var prevTs = if (lastSeenTimestampNanos > 0L) lastSeenTimestampNanos else newTimestamps.first()
+
+            for (ts in newTimestamps) {
+                if (ts > prevTs) {
+                    val deltaNanos = ts - prevTs
+                    val deltaMs = deltaNanos / 1_000_000.0f
+                    if (deltaMs in 0.5f..1000.0f) {
+                        SessionRecorder.recordFrameTime(deltaMs)
+                        synchronized(recentFrameTimes) {
+                            if (recentFrameTimes.size >= maxFrameHistory) {
+                                recentFrameTimes.removeAt(0)
+                            }
+                            recentFrameTimes.add(deltaMs)
+                        }
+                    }
+                    prevTs = ts
+                }
+            }
+
+            lastSeenTimestampNanos = newTimestamps.last()
+            lastFrameReceivedTimeMs = nowMs
+
+            // Calculate instantaneous FPS
+            if (newTimestamps.size >= 2) {
+                val totalDurationNanos = newTimestamps.last() - newTimestamps.first()
+                if (totalDurationNanos > 0L) {
+                    val fps = ((newTimestamps.size - 1) * 1_000_000_000.0 / totalDurationNanos).toFloat()
+                    currentFps = fps.coerceIn(0.0f, 240.0f)
+                }
+            } else {
+                synchronized(recentFrameTimes) {
+                    if (recentFrameTimes.isNotEmpty()) {
+                        val avgFt = recentFrameTimes.takeLast(15).average().toFloat()
+                        if (avgFt > 0f) {
+                            currentFps = (1000.0f / avgFt).coerceIn(0.0f, 240.0f)
                         }
                     }
                 }
             }
-        } catch (_: Exception) {}
-        return -1.0f
+        }
     }
 
-    private fun queryActiveLayerName(): String {
-        try {
-            val out = ShellUtils.exec("dumpsys window 2>/dev/null | grep -E 'mCurrentFocus|mFocusedApp'")
-            if (out.isNotBlank()) {
-                val regex = Regex("([a-zA-Z0-9_.]+/[a-zA-Z0-9_.]+)")
-                val match = regex.find(out)
-                if (match != null) {
-                    return match.value
-                }
-            }
-            val actOut = ShellUtils.exec("dumpsys activity activities 2>/dev/null | grep -E 'mResumedActivity|topResumedActivity'")
-            if (actOut.isNotBlank()) {
-                val regex = Regex("([a-zA-Z0-9_.]+/[a-zA-Z0-9_.]+)")
-                val match = regex.find(actOut)
-                if (match != null) {
-                    return match.value
-                }
-            }
-        } catch (_: Exception) {}
-        return ""
+    override fun update(metrics: PerformanceMetrics) {
+        val isElevated = ShizukuManager.isPermissionGranted() || ShellUtils.isRootAvailable()
+        if (!isElevated) {
+            metrics.fps = -1.0f
+            metrics.layerName = "Shizuku Required"
+            return
+        }
+
+        if (currentFps >= 0.0f) {
+            metrics.fps = currentFps
+        } else {
+            metrics.fps = 0.0f
+        }
+
+        if (currentLayerName.isNotBlank()) {
+            metrics.layerName = currentLayerName
+        } else if (currentPackageName.isNotBlank()) {
+            metrics.layerName = currentPackageName
+        }
     }
 
     override fun stop() {
         isRunning = false
-        handler.post {
-            Choreographer.getInstance().removeFrameCallback(this)
-        }
+        trackingJob?.cancel()
+        trackingJob = null
     }
 }

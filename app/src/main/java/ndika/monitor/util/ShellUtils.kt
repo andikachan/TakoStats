@@ -47,14 +47,7 @@ object ShellUtils {
 
     private fun execShizuku(command: String): String {
         try {
-            val method = Shizuku::class.java.getDeclaredMethod(
-                "newProcess",
-                Array<String>::class.java,
-                Array<String>::class.java,
-                String::class.java
-            )
-            method.isAccessible = true
-            val process = method.invoke(null, arrayOf("sh", "-c", command), null, null) as? Process
+            val process = ShizukuManager.newProcess(arrayOf("sh", "-c", command))
             if (process != null) {
                 val reader = BufferedReader(InputStreamReader(process.inputStream))
                 val output = StringBuilder()
