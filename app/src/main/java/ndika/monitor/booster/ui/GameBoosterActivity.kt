@@ -11,6 +11,7 @@ import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -45,9 +46,12 @@ class GameBoosterActivity : AppCompatActivity() {
     private lateinit var viewModel: GameBoosterViewModel
     private lateinit var gameAdapter: GameListAdapter
 
-    private val shizukuPermissionListener = Shizuku.OnRequestPermissionResultListener { requestCode, _ ->
+    private val shizukuPermissionListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
         if (requestCode == SHIZUKU_REQUEST_CODE) {
             viewModel.checkShizukuStatus()
+            if (grantResult == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                Toast.makeText(this, "Shizuku ADB permission granted!", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -90,6 +94,7 @@ class GameBoosterActivity : AppCompatActivity() {
 
     private fun setupGameRecyclerView() {
         gameAdapter = GameListAdapter { game ->
+            Toast.makeText(this, "Optimizing & launching ${game.appName}...", Toast.LENGTH_SHORT).show()
             viewModel.launchGame(this, game.packageName)
         }
         binding.rvGames.apply {
@@ -99,6 +104,12 @@ class GameBoosterActivity : AppCompatActivity() {
     }
 
     private fun setupButtons() {
+        binding.cardShizukuStatus.setOnClickListener {
+            if (!viewModel.uiState.value.isShizukuReady) {
+                requestShizukuPermission()
+            }
+        }
+
         binding.btnGrantShizuku.setOnClickListener {
             requestShizukuPermission()
         }
@@ -132,12 +143,12 @@ class GameBoosterActivity : AppCompatActivity() {
     private fun renderShizukuBanner(isReady: Boolean) {
         if (isReady) {
             binding.tvShizukuTitle.text = "Shizuku ADB Access (Active)"
-            binding.tvShizukuDesc.text = "Elevated system privileges are ready for booster operations."
+            binding.tvShizukuDesc.text = "Elevated system privileges are ready for deep kernel booster."
             binding.imgShizukuIcon.setColorFilter(ContextCompat.getColor(this, android.R.color.holo_green_dark))
             binding.btnGrantShizuku.visibility = View.GONE
         } else {
             binding.tvShizukuTitle.text = "Shizuku Permission Required"
-            binding.tvShizukuDesc.text = "Authorize Shizuku to allow storage trimming and process termination."
+            binding.tvShizukuDesc.text = "Tap to authorize Shizuku for deep background purge & PowerHAL lock."
             binding.imgShizukuIcon.setColorFilter(ContextCompat.getColor(this, android.R.color.holo_orange_dark))
             binding.btnGrantShizuku.visibility = View.VISIBLE
         }
@@ -196,10 +207,19 @@ class GameBoosterActivity : AppCompatActivity() {
             if (Shizuku.pingBinder()) {
                 Shizuku.requestPermission(SHIZUKU_REQUEST_CODE)
             } else {
-                Snackbar.make(binding.root, "Shizuku service is not running on device.", Snackbar.LENGTH_LONG).show()
+                Snackbar.make(
+                    binding.root,
+                    "Shizuku service belum berjalan. Buka aplikasi Shizuku dan aktifkan via Wireless Debugging.",
+                    Snackbar.LENGTH_LONG
+                ).setAction("Open") {
+                    try {
+                        val launchIntent = packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api")
+                        if (launchIntent != null) startActivity(launchIntent)
+                    } catch (_: Exception) {}
+                }.show()
             }
         } catch (_: Exception) {
-            Snackbar.make(binding.root, "Unable to request Shizuku permission.", Snackbar.LENGTH_LONG).show()
+            Snackbar.make(binding.root, "Gagal meminta izin Shizuku.", Snackbar.LENGTH_LONG).show()
         }
     }
 
