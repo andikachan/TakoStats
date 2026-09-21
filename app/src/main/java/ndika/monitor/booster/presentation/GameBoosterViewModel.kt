@@ -16,10 +16,11 @@ import ndika.monitor.booster.model.WatchdogAlert
 import ndika.monitor.booster.watchdog.ThermalMemoryWatchdog
 
 class GameBoosterViewModel(
-    application: Application,
-    private val repository: IGameBoosterRepository = GameBoosterRepositoryImpl(application),
-    private val watchdog: ThermalMemoryWatchdog = ThermalMemoryWatchdog(application)
+    application: Application
 ) : AndroidViewModel(application) {
+
+    private val repository: IGameBoosterRepository = GameBoosterRepositoryImpl(application)
+    private val watchdog: ThermalMemoryWatchdog = ThermalMemoryWatchdog(application)
 
     private val _uiState = MutableStateFlow(GameBoosterUiState())
     val uiState: StateFlow<GameBoosterUiState> = _uiState.asStateFlow()
