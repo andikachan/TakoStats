@@ -3,7 +3,6 @@ package ndika.monitor.booster.ui
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -12,17 +11,16 @@ import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.launch
-import ndika.monitor.booster.model.BoostProgress
 import ndika.monitor.booster.model.BoostStep
 import ndika.monitor.booster.model.GameAppInfo
 import ndika.monitor.booster.model.WatchdogStatus
@@ -44,10 +42,10 @@ class GameBoosterActivity : AppCompatActivity() {
     }
 
     private lateinit var binding: ActivityGameBoosterBinding
-    private val viewModel: GameBoosterViewModel by viewModels()
+    private lateinit var viewModel: GameBoosterViewModel
     private lateinit var gameAdapter: GameListAdapter
 
-    private val shizukuPermissionListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
+    private val shizukuPermissionListener = Shizuku.OnRequestPermissionResultListener { requestCode, _ ->
         if (requestCode == SHIZUKU_REQUEST_CODE) {
             viewModel.checkShizukuStatus()
         }
@@ -57,6 +55,8 @@ class GameBoosterActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityGameBoosterBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        viewModel = ViewModelProvider(this)[GameBoosterViewModel::class.java]
 
         setupToolbar()
         setupGameRecyclerView()

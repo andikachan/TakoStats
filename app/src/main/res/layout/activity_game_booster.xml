@@ -146,7 +146,7 @@
                                 android:id="@+id/tvThermalThrottleWarning"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Throttling Risk (≥40°C)"
+                                android:text="Throttling Risk (&gt;= 40°C)"
                                 android:textColor="#E53935"
                                 android:textSize="11sp"
                                 android:textStyle="bold"

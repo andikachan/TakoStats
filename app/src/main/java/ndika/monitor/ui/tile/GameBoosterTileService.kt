@@ -8,10 +8,10 @@ import androidx.annotation.RequiresApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.lastOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import ndika.monitor.booster.domain.GameBoosterRepositoryImpl
+import ndika.monitor.booster.model.BoostProgress
 import ndika.monitor.booster.model.BoostStep
 
 @RequiresApi(Build.VERSION_CODES.N)
@@ -32,12 +32,13 @@ class GameBoosterTileService : TileService() {
 
     override fun onClick() {
         super.onClick()
-        val tile = qsTile ?: return
-
         updateTileState(Tile.STATE_ACTIVE, "Optimizing...")
 
         serviceScope.launch {
-            val lastProgress = repository.executePreGameBoost().lastOrNull()
+            var lastProgress: BoostProgress? = null
+            repository.executePreGameBoost().collect { progress ->
+                lastProgress = progress
+            }
             val isSuccess = lastProgress?.step == BoostStep.COMPLETED
 
             withContext(Dispatchers.Main) {
