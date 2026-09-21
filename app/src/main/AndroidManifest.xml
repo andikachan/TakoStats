@@ -11,6 +11,7 @@
     <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application
         android:name=".NdiMonitorApplication"
@@ -90,7 +91,7 @@
                 android:value="Floating Performance Monitor Overlay" />
         </service>
 
-        <!-- Quick Settings Tile Service -->
+        <!-- Quick Settings Tile Service: FPS Overlay -->
         <service
             android:name=".ui.tile.FpsTileService"
             android:exported="true"
@@ -106,6 +107,18 @@
             <meta-data
                 android:name="android.service.quicksettings.ACTIVE_TILE"
                 android:value="true" />
+        </service>
+
+        <!-- Quick Settings Tile Service: Game Booster Engine -->
+        <service
+            android:name=".ui.tile.GameBoosterTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_stat_fps"
+            android:label="Game Booster"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
         </service>
 
         <!-- Shizuku Provider -->
