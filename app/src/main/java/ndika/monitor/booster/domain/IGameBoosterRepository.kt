@@ -1,15 +1,24 @@
 package ndika.monitor.booster.domain
 
 import kotlinx.coroutines.flow.Flow
-import ndika.monitor.booster.model.AppPurgeResult
-import ndika.monitor.booster.model.BoostProgressState
-import ndika.monitor.booster.model.ShellResult
+import ndika.monitor.booster.model.BoostProgress
 
+/**
+ * Domain repository contract for Game Booster operations.
+ */
 interface IGameBoosterRepository {
-    fun isShizukuReady(): Boolean
-    suspend fun trimStorage(): ShellResult
-    suspend fun purgeBackgroundApps(customWhitelist: Set<String> = emptySet()): AppPurgeResult
-    suspend fun setFixedPerformanceMode(enable: Boolean): ShellResult
-    fun executePreGameBoost(customWhitelist: Set<String> = emptySet()): Flow<BoostProgressState>
-    suspend fun executePostGameRestore(): ShellResult
+    /**
+     * Executes the comprehensive pre-game optimization pipeline (fstrim, app purge, fixed performance mode).
+     */
+    fun runPreGameBoost(): Flow<BoostProgress>
+
+    /**
+     * Restores default system power and governor parameters post-gaming.
+     */
+    fun restorePostGame(): Flow<BoostProgress>
+
+    /**
+     * Verifies whether Shizuku service is running and permission is granted.
+     */
+    fun checkPrerequisites(): Boolean
 }

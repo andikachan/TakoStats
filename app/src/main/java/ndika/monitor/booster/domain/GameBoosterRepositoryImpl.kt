@@ -13,10 +13,9 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import ndika.monitor.booster.executor.IShizukuShellExecutor
 import ndika.monitor.booster.executor.ShizukuShellExecutor
-import ndika.monitor.booster.model.AppPurgeResult
-import ndika.monitor.booster.model.BoostProgressState
-import ndika.monitor.booster.model.BoostStep
-import ndika.monitor.booster.model.ShellResult
+import ndika.monitor.booster.model.BoostConstants
+import ndika.monitor.booster.model.BoostProgress
+import ndika.monitor.booster.model.BoostStepType
 
 class GameBoosterRepositoryImpl(
     private val context: Context,
@@ -26,164 +25,162 @@ class GameBoosterRepositoryImpl(
     private val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
     private val packageManager = context.packageManager
 
-    // Essential system & communication packages that must NEVER be terminated
-    private val essentialSystemWhitelist = setOf(
-        "android",
-        "com.android.systemui",
-        "com.android.phone",
-        "com.android.server.telecom",
-        "com.android.providers.telephony",
-        "com.android.bluetooth",
-        "com.android.nfc",
-        "com.google.android.gms",
-        "com.google.android.gsf",
-        "com.google.android.play.games",
-        "moe.shizuku.privileged.api",
-        "rikka.shizuku",
-        context.packageName
-    )
-
-    // Essential daily communication & critical apps whitelist
-    private val essentialUserWhitelist = setOf(
-        "com.whatsapp",
-        "com.whatsapp.w4b",
-        "org.telegram.messenger",
-        "org.telegram.plus",
-        "com.discord",
-        "com.google.android.dialer",
-        "com.google.android.apps.messaging",
-        "com.samsung.android.messaging",
-        "com.samsung.android.dialer",
-        "com.vivo.browser",
-        "com.android.camera"
-    )
-
-    override fun isShizukuReady(): Boolean {
-        return shellExecutor.isAvailable()
+    override fun checkPrerequisites(): Boolean {
+        return shellExecutor.isShizukuAvailable() && shellExecutor.hasPermission()
     }
 
-    override suspend fun trimStorage(): ShellResult {
-        // Runs Android storage TRIM on /data, /cache and internal eMMC/UFS partitions
-        return shellExecutor.execute("sm fstrim", timeoutMs = 15_000L)
-    }
-
-    override suspend fun purgeBackgroundApps(customWhitelist: Set<String>): AppPurgeResult {
-        val resolvedWhitelist = buildFullWhitelist(customWhitelist)
-        val targetPackages = getPurgeableThirdPartyPackages(resolvedWhitelist)
-
-        val stopped = mutableListOf<String>()
-        val failed = mutableListOf<String>()
-
-        for (pkg in targetPackages) {
-            val res = shellExecutor.execute("am force-stop $pkg", timeoutMs = 2000L)
-            if (res.isSuccess) {
-                stopped.add(pkg)
-            } else {
-                failed.add(pkg)
-            }
-        }
-
-        // Drop user-space cached processes safely
-        shellExecutor.execute("am kill-all", timeoutMs = 3000L)
-
-        return AppPurgeResult(
-            stoppedPackages = stopped,
-            failedPackages = failed,
-            skippedWhitelistedCount = resolvedWhitelist.size
-        )
-    }
-
-    override suspend fun setFixedPerformanceMode(enable: Boolean): ShellResult {
-        // Enables / disables sustained fixed performance mode on supported Android 11+ PowerHAL
-        val cmd = "cmd power set-fixed-performance-mode-enabled $enable"
-        return shellExecutor.execute(cmd, timeoutMs = 5000L)
-    }
-
-    override fun executePreGameBoost(customWhitelist: Set<String>): Flow<BoostProgressState> = flow {
-        if (!isShizukuReady()) {
-            emit(BoostProgressState.Error("Shizuku is not running or permission is missing. Please authorize Shizuku."))
+    override fun runPreGameBoost(): Flow<BoostProgress> = flow {
+        if (!checkPrerequisites()) {
+            emit(BoostProgress.Error("Shizuku ADB permission is required. Please start Shizuku and grant access."))
             return@flow
         }
 
-        val logDetails = mutableListOf<String>()
-        val initialRamMb = getAvailableRamMb()
+        val logSummary = mutableListOf<String>()
+        val initialRamMb = queryAvailableRamMb()
 
-        emit(BoostProgressState.InProgress(
-            currentStep = BoostStep.STORAGE_TRIM,
-            progressPercent = 10,
-            message = "Trimming flash storage (fstrim) to eliminate eMMC/UFS latency..."
+        // Step 1: Auto Storage Trim (fstrim)
+        emit(BoostProgress.InProgress(
+            step = BoostStepType.FSTRIM,
+            progressPercentage = 15,
+            message = "Executing storage TRIM (sm fstrim) to clear flash write amplification..."
         ))
 
-        // 1. Auto Storage Trim
-        val trimResult = trimStorage()
-        val isTrimmed = trimResult.isSuccess
-        if (isTrimmed) {
-            logDetails.add(" Storage TRIM complete: flash I/O optimized.")
+        val trimResult = shellExecutor.executeCommand("sm fstrim", timeoutMs = 15000L)
+        if (trimResult.isSuccess) {
+            logSummary.add("• Storage TRIM: Flash controller wear leveled & I/O latency optimized.")
         } else {
-            logDetails.add(" Storage TRIM warning: ${trimResult.output}")
+            logSummary.add("• Storage TRIM: Warning (${trimResult.output})")
         }
 
-        emit(BoostProgressState.InProgress(
-            currentStep = BoostStep.BACKGROUND_APP_PURGE,
-            progressPercent = 45,
-            message = "Purging memory-hogging background apps & cached services..."
+        // Step 2: Background App Purge
+        emit(BoostProgress.InProgress(
+            step = BoostStepType.APP_PURGE,
+            progressPercentage = 50,
+            message = "Purging heavy background applications and reclaiming RAM..."
         ))
 
-        // 2. Background App Purge
-        val purgeResult = purgeBackgroundApps(customWhitelist)
-        logDetails.add(" Purged ${purgeResult.stoppedPackages.size} background applications.")
+        val purgeablePackages = resolvePurgeablePackages()
+        var purgedCount = 0
 
-        emit(BoostProgressState.InProgress(
-            currentStep = BoostStep.FIXED_PERFORMANCE_MODE,
-            progressPercent = 80,
-            message = "Enabling Android Fixed Performance Mode..."
-        ))
-
-        // 3. Fixed Performance Mode
-        val perfResult = setFixedPerformanceMode(true)
-        val isPerfEnabled = perfResult.isSuccess
-        if (isPerfEnabled) {
-            logDetails.add(" Fixed Performance Mode enabled (PowerHAL).")
-        } else {
-            logDetails.add(" Fixed Performance Mode: Not supported on this ROM kernel (skipped).")
+        for (pkg in purgeablePackages) {
+            val res = shellExecutor.executeCommand("am force-stop $pkg", timeoutMs = 2000L)
+            if (res.isSuccess) {
+                purgedCount++
+            }
         }
 
-        val finalRamMb = getAvailableRamMb()
+        // Reclaim general cached background services
+        shellExecutor.executeCommand("am kill-all", timeoutMs = 2000L)
+        logSummary.add("• Background Purge: Terminated $purgedCount background processes.")
+
+        // Step 3: Fixed Performance Mode (PowerHAL)
+        emit(BoostProgress.InProgress(
+            step = BoostStepType.FIXED_PERFORMANCE,
+            progressPercentage = 85,
+            message = "Activating Android sustained performance mode..."
+        ))
+
+        val perfResult = shellExecutor.executeCommand("cmd power set-fixed-performance-mode-enabled true", timeoutMs = 5000L)
+        val isPerfModeActive = perfResult.isSuccess
+        if (isPerfModeActive) {
+            logSummary.add("• PowerHAL: Fixed Performance Mode successfully locked.")
+        } else {
+            logSummary.add("• PowerHAL: Fixed Performance Mode not supported by this device vendor (skipped).")
+        }
+
+        val finalRamMb = queryAvailableRamMb()
         val freedRam = maxOf(0L, finalRamMb - initialRamMb)
 
-        emit(BoostProgressState.InProgress(
-            currentStep = BoostStep.FIXED_PERFORMANCE_MODE,
-            progressPercent = 100,
-            message = "Boost complete! Freed ${freedRam} MB RAM."
+        emit(BoostProgress.InProgress(
+            step = BoostStepType.COMPLETE,
+            progressPercentage = 100,
+            message = "Game Booster optimization complete! Reclaimed ${freedRam} MB RAM."
         ))
 
-        emit(BoostProgressState.Success(
-            isStorageTrimmed = isTrimmed,
-            purgedAppsCount = purgeResult.stoppedPackages.size,
-            isPerformanceModeActive = isPerfEnabled,
+        emit(BoostProgress.Success(
+            isStorageTrimmed = trimResult.isSuccess,
+            purgedAppsCount = purgedCount,
+            isPerformanceModeActive = isPerfModeActive,
             freedRamMb = freedRam,
-            logDetails = logDetails
+            summaryLogs = logSummary
         ))
     }.flowOn(Dispatchers.IO)
 
-    override suspend fun executePostGameRestore(): ShellResult {
-        // Disable Fixed Performance Mode to allow standard DVFS battery saver behavior
-        return setFixedPerformanceMode(false)
-    }
+    override fun restorePostGame(): Flow<BoostProgress> = flow {
+        if (!checkPrerequisites()) {
+            emit(BoostProgress.Error("Shizuku is not running."))
+            return@flow
+        }
 
-    private fun getAvailableRamMb(): Long {
+        emit(BoostProgress.InProgress(
+            step = BoostStepType.FIXED_PERFORMANCE,
+            progressPercentage = 50,
+            message = "Restoring default system governor & power state..."
+        ))
+
+        // Disable Fixed Performance Mode
+        val res = shellExecutor.executeCommand("cmd power set-fixed-performance-mode-enabled false", timeoutMs = 5000L)
+
+        emit(BoostProgress.Success(
+            isStorageTrimmed = false,
+            purgedAppsCount = 0,
+            isPerformanceModeActive = false,
+            freedRamMb = 0L,
+            summaryLogs = listOf(
+                if (res.isSuccess) "• Power state reverted to standard dynamic voltage/frequency scaling (DVFS)."
+                else "• Power restore notice: ${res.output}"
+            )
+        ))
+    }.flowOn(Dispatchers.IO)
+
+    private fun queryAvailableRamMb(): Long {
         val memoryInfo = ActivityManager.MemoryInfo()
         activityManager.getMemoryInfo(memoryInfo)
         return memoryInfo.availMem / (1024 * 1024)
     }
 
-    private fun buildFullWhitelist(custom: Set<String>): Set<String> {
-        val set = mutableSetOf<String>()
-        set.addAll(essentialSystemWhitelist)
-        set.addAll(essentialUserWhitelist)
-        set.addAll(custom)
+    private fun resolvePurgeablePackages(): Set<String> {
+        val resolved = mutableSetOf<String>()
+        val fullWhitelist = buildDynamicWhitelist()
 
-        // Dynamically resolve Default Home Launcher
+        // 1. Add known heavy bloatware targets that are currently installed
+        for (pkg in BoostConstants.DEFAULT_PURGEABLE_PACKAGES) {
+            if (!fullWhitelist.contains(pkg) && isPackageInstalled(pkg)) {
+                resolved.add(pkg)
+            }
+        }
+
+        // 2. Scan installed third-party apps
+        try {
+            val installed = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                packageManager.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(0L))
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getInstalledApplications(0)
+            }
+
+            for (app in installed) {
+                val pkg = app.packageName
+                if (fullWhitelist.contains(pkg)) continue
+
+                val isSystem = (app.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+                val isUpdatedSystem = (app.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
+
+                if (!isSystem || isUpdatedSystem) {
+                    resolved.add(pkg)
+                }
+            }
+        } catch (_: Exception) {}
+
+        return resolved
+    }
+
+    private fun buildDynamicWhitelist(): Set<String> {
+        val whitelist = mutableSetOf<String>()
+        whitelist.addAll(BoostConstants.ESSENTIAL_WHITELIST_PACKAGES)
+        whitelist.add(context.packageName)
+
+        // Dynamic Home Launcher resolution
         try {
             val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
             val resolveInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -192,45 +189,32 @@ class GameBoosterRepositoryImpl(
                 @Suppress("DEPRECATION")
                 packageManager.resolveActivity(homeIntent, PackageManager.MATCH_DEFAULT_ONLY)
             }
-            resolveInfo?.activityInfo?.packageName?.let { set.add(it) }
+            resolveInfo?.activityInfo?.packageName?.let { whitelist.add(it) }
         } catch (_: Exception) {}
 
-        // Dynamically resolve Default Input Method (Keyboard)
+        // Dynamic Active Keyboard / IME resolution
         try {
-            val defaultIme = Settings.Secure.getString(context.contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
-            if (!defaultIme.isNullOrBlank()) {
-                val imePkg = defaultIme.substringBefore("/")
-                if (imePkg.isNotBlank()) set.add(imePkg)
+            val ime = Settings.Secure.getString(context.contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
+            if (!ime.isNullOrBlank()) {
+                val imePkg = ime.substringBefore("/")
+                if (imePkg.isNotBlank()) whitelist.add(imePkg)
             }
         } catch (_: Exception) {}
 
-        return set
+        return whitelist
     }
 
-    private fun getPurgeableThirdPartyPackages(whitelist: Set<String>): List<String> {
-        val result = mutableListOf<String>()
-        try {
-            val installedApps = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                packageManager.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(0L))
+    private fun isPackageInstalled(packageName: String): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0L))
             } else {
                 @Suppress("DEPRECATION")
-                packageManager.getInstalledApplications(0)
+                packageManager.getPackageInfo(packageName, 0)
             }
-
-            for (app in installedApps) {
-                val pkg = app.packageName
-                if (whitelist.contains(pkg)) continue
-
-                val isSystem = (app.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-                val isUpdatedSystem = (app.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
-
-                // Purge non-system 3rd party apps or heavy bloatware
-                if (!isSystem || isUpdatedSystem) {
-                    result.add(pkg)
-                }
-            }
-        } catch (_: Exception) {}
-
-        return result
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 }

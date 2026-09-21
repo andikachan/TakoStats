@@ -2,10 +2,22 @@ package ndika.monitor.booster.executor
 
 import ndika.monitor.booster.model.ShellResult
 
+/**
+ * Interface defining asynchronous ADB shell execution via Shizuku.
+ */
 interface IShizukuShellExecutor {
-    fun isShizukuAlive(): Boolean
-    fun isPermissionGranted(): Boolean
-    fun isAvailable(): Boolean
-    suspend fun execute(command: String, timeoutMs: Long = 10_000L): ShellResult
-    suspend fun executeBatch(commands: List<String>, timeoutMs: Long = 20_000L): List<ShellResult>
+    /**
+     * Executes an ADB shell command asynchronously with a timeout.
+     */
+    suspend fun executeCommand(command: String, timeoutMs: Long = 10000L): ShellResult
+
+    /**
+     * Checks if the Shizuku IPC binder service is alive.
+     */
+    fun isShizukuAvailable(): Boolean
+
+    /**
+     * Checks if the caller application has been granted runtime permission by Shizuku.
+     */
+    fun hasPermission(): Boolean
 }

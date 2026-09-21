@@ -1,8 +1,11 @@
 package ndika.monitor.booster.executor
 
 import android.content.pm.PackageManager
+import android.os.DeadObjectException
+import android.os.RemoteException
 import android.os.SystemClock
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
@@ -10,7 +13,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import ndika.monitor.booster.model.ShellResult
 import rikka.shizuku.Shizuku
 import java.io.BufferedReader
-import java.io.InputStreamReader
+import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
 
 class ShizukuShellExecutor : IShizukuShellExecutor {
@@ -18,10 +21,10 @@ class ShizukuShellExecutor : IShizukuShellExecutor {
     private var newProcessMethod: Method? = null
 
     init {
-        findShizukuNewProcessMethod()
+        resolveShizukuProcessMethod()
     }
 
-    private fun findShizukuNewProcessMethod() {
+    private fun resolveShizukuProcessMethod() {
         try {
             val method = Shizuku::class.java.getDeclaredMethod(
                 "newProcess",
@@ -34,7 +37,7 @@ class ShizukuShellExecutor : IShizukuShellExecutor {
         } catch (_: Exception) {}
     }
 
-    override fun isShizukuAlive(): Boolean {
+    override fun isShizukuAvailable(): Boolean {
         return try {
             Shizuku.pingBinder()
         } catch (_: Exception) {
@@ -42,9 +45,9 @@ class ShizukuShellExecutor : IShizukuShellExecutor {
         }
     }
 
-    override fun isPermissionGranted(): Boolean {
+    override fun hasPermission(): Boolean {
         return try {
-            if (isShizukuAlive()) {
+            if (isShizukuAvailable()) {
                 Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
             } else {
                 false
@@ -54,39 +57,48 @@ class ShizukuShellExecutor : IShizukuShellExecutor {
         }
     }
 
-    override fun isAvailable(): Boolean {
-        return isShizukuAlive() && isPermissionGranted()
-    }
-
-    override suspend fun execute(command: String, timeoutMs: Long): ShellResult = withContext(Dispatchers.IO) {
-        if (!isShizukuAlive()) {
-            return@withContext ShellResult.failure("Shizuku service is not running. Please start Shizuku.")
+    override suspend fun executeCommand(command: String, timeoutMs: Long): ShellResult = withContext(Dispatchers.IO) {
+        if (!isShizukuAvailable()) {
+            return@withContext ShellResult.failure("Shizuku binder is not available or disconnected.")
         }
-        if (!isPermissionGranted()) {
-            return@withContext ShellResult.failure("Shizuku permission has not been granted.")
+        if (!hasPermission()) {
+            return@withContext ShellResult.failure("Shizuku permission has not been granted by user.")
         }
 
         val startTime = SystemClock.elapsedRealtime()
         var process: Process? = null
 
         try {
-            val res = withTimeoutOrNull(timeoutMs) {
+            val executionResult = withTimeoutOrNull(timeoutMs) {
                 coroutineScope {
-                    val cmdArray = arrayOf("sh", "-c", command)
-                    
                     if (newProcessMethod == null) {
-                        findShizukuNewProcessMethod()
+                        resolveShizukuProcessMethod()
                     }
-                    
-                    val method = newProcessMethod 
-                        ?: return@coroutineScope ShellResult.failure("Shizuku.newProcess API reflection failed.")
 
-                    process = method.invoke(null, cmdArray, null, null) as? Process
-                        ?: return@coroutineScope ShellResult.failure("Failed to spawn Shizuku process.")
+                    val method = newProcessMethod
+                        ?: return@coroutineScope ShellResult.failure("Shizuku reflection method unresolved.")
 
-                    val proc = process!!
+                    val cmd = arrayOf("sh", "-c", command)
+                    process = try {
+                        method.invoke(null, cmd, null, null) as? Process
+                    } catch (e: InvocationTargetException) {
+                        val target = e.targetException
+                        if (target is SecurityException) {
+                            return@coroutineScope ShellResult.failure("Shizuku SecurityException: ${target.message}")
+                        } else if (target is DeadObjectException || target is RemoteException) {
+                            return@coroutineScope ShellResult.failure("Shizuku IPC DeadObjectException: Shizuku service was terminated.")
+                        }
+                        return@coroutineScope ShellResult.failure("Process spawn error: ${target?.message ?: e.message}")
+                    } catch (e: SecurityException) {
+                        return@coroutineScope ShellResult.failure("Shizuku SecurityException: ${e.message}")
+                    } catch (e: IllegalStateException) {
+                        return@coroutineScope ShellResult.failure("Shizuku IllegalStateException: ${e.message}")
+                    }
 
-                    // Asynchronously consume stdout and stderr to prevent OS pipe deadlock
+                    val proc = process
+                        ?: return@coroutineScope ShellResult.failure("Failed to instantiate Shizuku process.")
+
+                    // Asynchronously read stdout and stderr to prevent pipe deadlock
                     val stdoutDeferred = async(Dispatchers.IO) {
                         proc.inputStream.bufferedReader().use(BufferedReader::readText)
                     }
@@ -110,28 +122,25 @@ class ShizukuShellExecutor : IShizukuShellExecutor {
                 }
             }
 
-            if (res == null) {
+            if (executionResult == null) {
                 process?.destroyForcibly()
                 val duration = SystemClock.elapsedRealtime() - startTime
-                ShellResult.failure("Command timed out after ${timeoutMs}ms: $command", exitCode = -1, durationMs = duration)
+                ShellResult.failure("Execution timed out after ${timeoutMs}ms for: $command", exitCode = -1, durationMs = duration)
             } else {
-                res
+                executionResult
             }
+        } catch (e: TimeoutCancellationException) {
+            process?.destroyForcibly()
+            val duration = SystemClock.elapsedRealtime() - startTime
+            ShellResult.failure("Command timed out: ${e.message}", exitCode = -1, durationMs = duration)
+        } catch (e: SecurityException) {
+            process?.destroyForcibly()
+            val duration = SystemClock.elapsedRealtime() - startTime
+            ShellResult.failure("Shizuku SecurityException: ${e.message}", exitCode = -1, durationMs = duration)
         } catch (e: Exception) {
             process?.destroyForcibly()
             val duration = SystemClock.elapsedRealtime() - startTime
-            ShellResult.failure("Shell execution error: ${e.message}", exitCode = -1, durationMs = duration)
+            ShellResult.failure("Shell execution failed: ${e.message}", exitCode = -1, durationMs = duration)
         }
-    }
-
-    override suspend fun executeBatch(commands: List<String>, timeoutMs: Long): List<ShellResult> = withContext(Dispatchers.IO) {
-        val results = mutableListOf<ShellResult>()
-        val singleTimeout = (timeoutMs / maxOf(1, commands.size)).coerceAtLeast(2000L)
-        
-        for (cmd in commands) {
-            val res = execute(cmd, singleTimeout)
-            results.add(res)
-        }
-        results
     }
 }

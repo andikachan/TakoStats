@@ -11,8 +11,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import ndika.monitor.booster.domain.GameBoosterRepositoryImpl
 import ndika.monitor.booster.domain.IGameBoosterRepository
-import ndika.monitor.booster.model.BoostProgressState
-import ndika.monitor.booster.model.WatchdogAlert
+import ndika.monitor.booster.model.BoostProgress
+import ndika.monitor.booster.model.WatchdogAlertEvent
 import ndika.monitor.booster.watchdog.ThermalMemoryWatchdog
 
 class GameBoosterViewModel(
@@ -25,91 +25,105 @@ class GameBoosterViewModel(
     private val _uiState = MutableStateFlow(GameBoosterUiState())
     val uiState: StateFlow<GameBoosterUiState> = _uiState.asStateFlow()
 
-    val watchdogAlerts: SharedFlow<WatchdogAlert> = watchdog.alertEvents
+    val alertEvents: SharedFlow<WatchdogAlertEvent> = watchdog.alertEvents
 
     init {
-        checkShizukuStatus()
-        observeWatchdog()
+        refreshStatus()
+        observeWatchdogMetrics()
+        watchdog.start(3000L)
     }
 
-    fun checkShizukuStatus() {
-        val isReady = repository.isShizukuReady()
-        _uiState.update { it.copy(
-            isShizukuAvailable = isReady,
-            isShizukuPermissionGranted = isReady
-        ) }
+    fun refreshStatus() {
+        val ready = repository.checkPrerequisites()
+        _uiState.update { it.copy(isShizukuReady = ready) }
     }
 
-    private fun observeWatchdog() {
+    private fun observeWatchdogMetrics() {
         viewModelScope.launch {
-            watchdog.status.collect { status ->
-                _uiState.update { it.copy(
-                    watchdogStatus = status,
-                    isWatchdogActive = watchdog.isRunning()
-                ) }
+            watchdog.watchdogStatus.collect { metrics ->
+                _uiState.update { it.copy(watchdogData = metrics) }
             }
         }
     }
 
-    fun toggleWatchdog(enable: Boolean) {
-        if (enable) {
-            watchdog.start()
-        } else {
-            watchdog.stop()
-        }
-        _uiState.update { it.copy(isWatchdogActive = watchdog.isRunning()) }
-    }
-
-    fun applyPreGameBoost() {
+    fun boostGame() {
         viewModelScope.launch {
-            if (!_uiState.value.isShizukuAvailable) {
-                checkShizukuStatus()
-                if (!_uiState.value.isShizukuAvailable) {
+            if (!repository.checkPrerequisites()) {
+                refreshStatus()
+                if (!_uiState.value.isShizukuReady) {
                     _uiState.update { it.copy(
-                        boostProgressState = BoostProgressState.Error("Shizuku is not connected or permission not granted.")
+                        errorMessage = "Shizuku ADB service is disconnected or permission is not granted."
                     ) }
                     return@launch
                 }
             }
 
-            // Start watchdog automatically during boost if not running
-            if (!watchdog.isRunning()) {
-                watchdog.start()
-            }
+            _uiState.update { it.copy(
+                isBoosting = true,
+                errorMessage = null,
+                statusMessage = null
+            ) }
 
-            _uiState.update { it.copy(isBoostActive = true) }
-
-            repository.executePreGameBoost(_uiState.value.customWhitelist).collect { progress ->
-                _uiState.update { state ->
-                    state.copy(
-                        boostProgressState = progress,
-                        isBoostActive = progress is BoostProgressState.InProgress || progress is BoostProgressState.Success
-                    )
+            repository.runPreGameBoost().collect { progress ->
+                when (progress) {
+                    is BoostProgress.Idle -> {
+                        _uiState.update { it.copy(isBoosting = false, boostProgress = progress) }
+                    }
+                    is BoostProgress.InProgress -> {
+                        _uiState.update { it.copy(
+                            isBoosting = true,
+                            currentStep = progress.step.name,
+                            progress = progress.progressPercentage,
+                            statusMessage = progress.message,
+                            boostProgress = progress
+                        ) }
+                    }
+                    is BoostProgress.Success -> {
+                        _uiState.update { it.copy(
+                            isBoosting = false,
+                            progress = 100,
+                            isPerformanceModeActive = progress.isPerformanceModeActive,
+                            boostProgress = progress,
+                            statusMessage = "Optimized successfully! Reclaimed ${progress.freedRamMb} MB."
+                        ) }
+                    }
+                    is BoostProgress.Error -> {
+                        _uiState.update { it.copy(
+                            isBoosting = false,
+                            errorMessage = progress.errorMessage,
+                            boostProgress = progress
+                        ) }
+                    }
                 }
             }
         }
     }
 
-    fun applyPostGameRestore() {
+    fun restoreDefaults() {
         viewModelScope.launch {
-            val result = repository.executePostGameRestore()
-            _uiState.update { state ->
-                state.copy(
-                    isBoostActive = false,
-                    boostProgressState = BoostProgressState.Idle,
-                    statusMessage = if (result.isSuccess) "Default system power state restored." else "Restore failed: ${result.output}"
-                )
+            _uiState.update { it.copy(isBoosting = true, errorMessage = null) }
+
+            repository.restorePostGame().collect { progress ->
+                when (progress) {
+                    is BoostProgress.Success -> {
+                        _uiState.update { it.copy(
+                            isBoosting = false,
+                            isPerformanceModeActive = false,
+                            boostProgress = progress,
+                            statusMessage = "Default system governor & DVFS scaling restored."
+                        ) }
+                    }
+                    is BoostProgress.Error -> {
+                        _uiState.update { it.copy(
+                            isBoosting = false,
+                            errorMessage = progress.errorMessage,
+                            boostProgress = progress
+                        ) }
+                    }
+                    else -> Unit
+                }
             }
         }
-    }
-
-    fun addCustomWhitelist(pkg: String) {
-        if (pkg.isBlank()) return
-        _uiState.update { it.copy(customWhitelist = it.customWhitelist + pkg.trim()) }
-    }
-
-    fun removeCustomWhitelist(pkg: String) {
-        _uiState.update { it.copy(customWhitelist = it.customWhitelist - pkg) }
     }
 
     override fun onCleared() {

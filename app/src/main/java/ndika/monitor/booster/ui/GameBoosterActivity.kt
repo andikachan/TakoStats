@@ -12,9 +12,9 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.launch
-import ndika.monitor.R
-import ndika.monitor.booster.model.BoostProgressState
-import ndika.monitor.booster.model.WatchdogAlert
+import ndika.monitor.booster.model.BoostProgress
+import ndika.monitor.booster.model.WatchdogAlertEvent
+import ndika.monitor.booster.presentation.GameBoosterUiState
 import ndika.monitor.booster.presentation.GameBoosterViewModel
 import ndika.monitor.databinding.ActivityGameBoosterBinding
 import ndika.monitor.shizuku.ShizukuManager
@@ -37,7 +37,7 @@ class GameBoosterActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        viewModel.checkShizukuStatus()
+        viewModel.refreshStatus()
     }
 
     private fun setupToolbar() {
@@ -52,11 +52,11 @@ class GameBoosterActivity : AppCompatActivity() {
         }
 
         binding.btnBoostNow.setOnClickListener {
-            viewModel.applyPreGameBoost()
+            viewModel.boostGame()
         }
 
         binding.btnRestoreDefaults.setOnClickListener {
-            viewModel.applyPostGameRestore()
+            viewModel.restoreDefaults()
         }
     }
 
@@ -65,18 +65,22 @@ class GameBoosterActivity : AppCompatActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch {
                     viewModel.uiState.collect { state ->
-                        updateShizukuBanner(state.isShizukuAvailable)
+                        updateShizukuBanner(state.isShizukuReady)
                         updateWatchdogView(state)
-                        updateBoostProgressView(state.boostProgressState)
+                        updateBoostProgressView(state)
 
-                        if (state.statusMessage.isNotBlank()) {
+                        if (!state.statusMessage.isNullOrBlank() && !state.isBoosting) {
                             Toast.makeText(this@GameBoosterActivity, state.statusMessage, Toast.LENGTH_SHORT).show()
+                        }
+
+                        if (!state.errorMessage.isNullOrBlank()) {
+                            Snackbar.make(binding.root, state.errorMessage, Snackbar.LENGTH_LONG).show()
                         }
                     }
                 }
 
                 launch {
-                    viewModel.watchdogAlerts.collect { alert ->
+                    viewModel.alertEvents.collect { alert ->
                         handleWatchdogAlert(alert)
                     }
                 }
@@ -98,72 +102,80 @@ class GameBoosterActivity : AppCompatActivity() {
         }
     }
 
-    private fun updateWatchdogView(state: ndika.monitor.booster.presentation.GameBoosterUiState) {
-        val watchdog = state.watchdogStatus
+    private fun updateWatchdogView(state: GameBoosterUiState) {
+        val watchdog = state.watchdogData
 
-        binding.tvBatteryTemp.text = String.format(Locale.ROOT, "%.1f °C", watchdog.batteryTempCelsius)
-        binding.tvThermalThrottleWarning.visibility = if (watchdog.isThermalThrottling) View.VISIBLE else View.GONE
+        binding.tvBatteryTemp.text = String.format(Locale.ROOT, "%.1f °C", watchdog.batteryTemp)
+        binding.tvThermalThrottleWarning.visibility = if (watchdog.isOverheating) View.VISIBLE else View.GONE
 
         binding.tvAvailableRam.text = "${watchdog.availableRamMb} MB"
-        binding.tvLowRamWarning.visibility = if (watchdog.isLowMemory) View.VISIBLE else View.GONE
+        binding.tvLowRamWarning.visibility = if (watchdog.isLowRam) View.VISIBLE else View.GONE
 
         binding.progressRamUsage.progress = watchdog.ramUsagePercent.toInt().coerceIn(0, 100)
     }
 
-    private fun updateBoostProgressView(state: BoostProgressState) {
-        when (state) {
-            is BoostProgressState.Idle -> {
+    private fun updateBoostProgressView(state: GameBoosterUiState) {
+        when (val progress = state.boostProgress) {
+            is BoostProgress.Idle -> {
                 binding.progressBoost.visibility = View.GONE
                 binding.tvBoostProgressMessage.visibility = View.GONE
                 binding.btnBoostNow.isEnabled = true
+                binding.btnRestoreDefaults.isEnabled = true
             }
-            is BoostProgressState.InProgress -> {
+            is BoostProgress.InProgress -> {
                 binding.progressBoost.visibility = View.VISIBLE
                 binding.tvBoostProgressMessage.visibility = View.VISIBLE
-                binding.tvBoostProgressMessage.text = state.message
+                binding.tvBoostProgressMessage.text = progress.message
                 binding.btnBoostNow.isEnabled = false
+                binding.btnRestoreDefaults.isEnabled = false
                 binding.cardBoostResults.visibility = View.GONE
             }
-            is BoostProgressState.Success -> {
+            is BoostProgress.Success -> {
                 binding.progressBoost.visibility = View.GONE
                 binding.tvBoostProgressMessage.visibility = View.GONE
                 binding.btnBoostNow.isEnabled = true
+                binding.btnRestoreDefaults.isEnabled = true
 
                 binding.cardBoostResults.visibility = View.VISIBLE
                 val reportBuilder = StringBuilder()
                 reportBuilder.append("✨ Boost Status: SUCCESS\n")
-                reportBuilder.append(" Freed RAM: ${state.freedRamMb} MB\n")
-                reportBuilder.append(" Purged Apps: ${state.purgedAppsCount}\n")
-                reportBuilder.append(" Storage TRIM: ${if (state.isStorageTrimmed) "Optimized" else "Skipped"}\n")
-                reportBuilder.append(" PowerHAL Fixed Perf: ${if (state.isPerformanceModeActive) "Enabled" else "N/A"}\n\n")
+                if (progress.freedRamMb > 0) {
+                    reportBuilder.append("• Freed RAM: ${progress.freedRamMb} MB\n")
+                }
+                if (progress.purgedAppsCount > 0) {
+                    reportBuilder.append("• Purged Apps: ${progress.purgedAppsCount}\n")
+                }
+                reportBuilder.append("• Storage TRIM: ${if (progress.isStorageTrimmed) "Optimized" else "Skipped"}\n")
+                reportBuilder.append("• PowerHAL Fixed Perf: ${if (progress.isPerformanceModeActive) "Enabled" else "Standard"}\n\n")
                 reportBuilder.append("Details:\n")
-                for (line in state.logDetails) {
+                for (line in progress.summaryLogs) {
                     reportBuilder.append(line).append("\n")
                 }
                 binding.tvBoostResultsLog.text = reportBuilder.toString()
             }
-            is BoostProgressState.Error -> {
+            is BoostProgress.Error -> {
                 binding.progressBoost.visibility = View.GONE
                 binding.tvBoostProgressMessage.visibility = View.GONE
                 binding.btnBoostNow.isEnabled = true
-                Snackbar.make(binding.root, state.message, Snackbar.LENGTH_LONG).show()
+                binding.btnRestoreDefaults.isEnabled = true
+                Snackbar.make(binding.root, progress.errorMessage, Snackbar.LENGTH_LONG).show()
             }
         }
     }
 
-    private fun handleWatchdogAlert(alert: WatchdogAlert) {
+    private fun handleWatchdogAlert(alert: WatchdogAlertEvent) {
         when (alert) {
-            is WatchdogAlert.HighTemperature -> {
+            is WatchdogAlertEvent.OverheatingAlert -> {
                 Snackbar.make(
                     binding.root,
-                    "⚠️ High Thermal Alert: Device battery is ${alert.tempCelsius}°C. Thermal throttling may occur.",
+                    "⚠️ Thermal Alert: Battery temperature is ${alert.tempCelsius}°C. Thermal throttling may occur.",
                     Snackbar.LENGTH_LONG
                 ).show()
             }
-            is WatchdogAlert.LowMemory -> {
+            is WatchdogAlertEvent.LowRamAlert -> {
                 Snackbar.make(
                     binding.root,
-                    "⚠️ Low Memory Alert: Free RAM dropped to ${alert.availableMb} MB. Background apps may stutter.",
+                    "⚠️ Low Memory Alert: Free RAM dropped to ${alert.freeRamMb} MB. Stuttering risk.",
                     Snackbar.LENGTH_LONG
                 ).show()
             }

@@ -1,15 +1,19 @@
 package ndika.monitor.booster.presentation
 
-import ndika.monitor.booster.model.BoostProgressState
-import ndika.monitor.booster.model.WatchdogStatus
+import ndika.monitor.booster.model.BoostProgress
+import ndika.monitor.booster.model.WatchdogModels
 
+/**
+ * Immutable UI State representing the Game Booster dashboard screen.
+ */
 data class GameBoosterUiState(
-    val isShizukuAvailable: Boolean = false,
-    val isShizukuPermissionGranted: Boolean = false,
-    val isBoostActive: Boolean = false,
-    val boostProgressState: BoostProgressState = BoostProgressState.Idle,
-    val watchdogStatus: WatchdogStatus = WatchdogStatus(),
-    val isWatchdogActive: Boolean = false,
-    val customWhitelist: Set<String> = emptySet(),
-    val statusMessage: String = ""
+    val isBoosting: Boolean = false,
+    val currentStep: String = "",
+    val progress: Int = 0,
+    val watchdogData: WatchdogModels = WatchdogModels(),
+    val errorMessage: String? = null,
+    val isShizukuReady: Boolean = false,
+    val isPerformanceModeActive: Boolean = false,
+    val boostProgress: BoostProgress = BoostProgress.Idle,
+    val statusMessage: String? = null
 )
