@@ -36,20 +36,16 @@ object ShizukuManager {
     fun newProcess(cmd: Array<String>): Process? {
         if (!isPermissionGranted()) return null
         return try {
-            Shizuku.newProcess(cmd, null, null)
+            val method = Shizuku::class.java.getDeclaredMethod(
+                "newProcess",
+                Array<String>::class.java,
+                Array<String>::class.java,
+                String::class.java
+            )
+            method.isAccessible = true
+            method.invoke(null, cmd, null, null) as? Process
         } catch (_: Exception) {
-            try {
-                val method = Shizuku::class.java.getDeclaredMethod(
-                    "newProcess",
-                    Array<String>::class.java,
-                    Array<String>::class.java,
-                    String::class.java
-                )
-                method.isAccessible = true
-                method.invoke(null, cmd, null, null) as? Process
-            } catch (_: Exception) {
-                null
-            }
+            null
         }
     }
 }
