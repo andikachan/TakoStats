@@ -233,7 +233,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun startLivePreview() {
         val cpuTracker = CpuTracker()
-        val gpuTracker = GpuTracker()
+        val gpuTracker = GpuTracker(this)
         val batTracker = BatteryTracker(this)
         val skinTracker = SkinThermalTracker()
         val memTracker = MemoryTracker(this)

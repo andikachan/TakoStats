@@ -1,30 +1,82 @@
 package ndika.monitor.tracker
 
+import android.content.Context
+import android.os.Build
+import android.os.HardwarePropertiesManager
 import ndika.monitor.model.PerformanceMetrics
 import ndika.monitor.util.ShellUtils
 import java.io.File
 
-class GpuTracker : ITracker {
+class GpuTracker(private val context: Context? = null) : ITracker {
 
     private var gpuBusyPath: String? = null
     private var gpuThermalPath: String? = null
     private var lastDetectTimeMs = 0L
+    private var hardwarePropertiesManager: HardwarePropertiesManager? = null
+
+    companion object {
+        @Volatile
+        var surfaceFlingerGpuUsage: Float = 0.0f
+        @Volatile
+        var lastSfGpuUpdateTimeMs: Long = 0L
+
+        fun setHardwareGpuUsage(usage: Float) {
+            surfaceFlingerGpuUsage = usage
+            lastSfGpuUpdateTimeMs = System.currentTimeMillis()
+        }
+    }
 
     private val fastCandidates = arrayOf(
+        // MediaTek GED & MTK gpufreq (Vivo Y22 / Helio G85 / G80 / Dimensity)
+        "/proc/ged/gpu_load",
+        "/proc/ged/hal/gpu_loading",
+        "/proc/ged/hal/total_gpu_freq",
+        "/sys/module/ged/parameters/gpu_loading",
+        "/sys/module/ged/parameters/ged_gpu_loading",
+        "/sys/kernel/ged/hal/gpu_loading",
+        "/sys/kernel/ged/hal/gpu_freq",
+        "/proc/gpufreq/gpu_loading",
+        "/proc/gpufreq/gpufreq_var_dump",
+        "/proc/mali/utilization",
+        // Mali sysfs / platform nodes
+        "/sys/class/misc/mali0/device/utilization",
+        "/sys/devices/platform/13040000.mali/utilization",
+        "/sys/devices/platform/13000000.mali/utilization",
+        "/sys/devices/platform/13000000.gpu/utilization",
+        "/sys/devices/platform/13040000.gpu/utilization",
+        "/sys/devices/platform/soc/13040000.mali/utilization",
+        "/sys/devices/platform/soc/13000000.mali/utilization",
+        "/sys/devices/platform/soc/13040000.mali/devfreq/13040000.mali/load",
+        "/sys/devices/platform/soc/13000000.mali/devfreq/13000000.mali/load",
+        "/sys/devices/platform/mali0/utilization",
+        "/sys/devices/platform/mali.0/utilization",
+        "/sys/devices/platform/gpu/utilization",
+        // Qualcomm Adreno (kgsl)
         "/sys/class/kgsl/kgsl-3d0/gpubusy",
         "/sys/class/kgsl/kgsl-3d0/gpu_busy_percentage",
-        "/sys/module/ged/parameters/gpu_loading",
-        "/proc/ged/gpu_load",
-        "/sys/class/misc/mali0/device/utilization",
-        "/sys/devices/platform/13000000.mali/utilization",
-        "/sys/devices/platform/13040000.mali/utilization",
-        "/sys/devices/platform/mali.0/utilization",
-        "/sys/class/devfreq/gpufreq/load",
         "/sys/class/devfreq/1c00000.qcom,kgsl-3d0/load",
-        "/sys/class/devfreq/3d00000.qcom,kgsl-3d0/load"
+        "/sys/class/devfreq/3d00000.qcom,kgsl-3d0/load",
+        "/sys/class/devfreq/soc:qcom,kgsl-3d0/load",
+        // Devfreq generic & Exynos
+        "/sys/class/devfreq/gpufreq/load",
+        "/sys/class/devfreq/13040000.mali/load",
+        "/sys/class/devfreq/13000000.mali/load",
+        "/sys/class/devfreq/mali/load",
+        "/sys/class/devfreq/mali0/load",
+        "/sys/class/devfreq/gpu/load",
+        "/sys/devices/platform/1c500000.mali/utilization",
+        "/sys/devices/platform/17000000.gpu/utilization",
+        "/sys/class/devfreq/17000000.gpu/load",
+        "/sys/class/devfreq/exynos-gpu/load"
     )
 
     init {
+        try {
+            if (context != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                hardwarePropertiesManager = context.getSystemService(Context.HARDWARE_PROPERTIES_SERVICE) as? HardwarePropertiesManager
+            }
+        } catch (_: Exception) {}
+
         detectGpuPaths()
         detectGpuThermalZone()
     }
@@ -37,7 +89,8 @@ class GpuTracker : ITracker {
             lastDetectTimeMs = now
         }
 
-        metrics.gpuUsage = readGpuUsage()
+        val usage = readGpuUsage()
+        metrics.gpuUsage = usage
         metrics.gpuTemperature = readGpuTemperature()
     }
 
@@ -54,7 +107,7 @@ class GpuTracker : ITracker {
         }
 
         // 2. Single multi-candidate batch query in ONE process (<5ms)
-        val script = "for p in /sys/class/kgsl/kgsl-3d0/gpubusy /sys/class/kgsl/kgsl-3d0/gpu_busy_percentage /sys/module/ged/parameters/gpu_loading /proc/ged/gpu_load /sys/class/misc/mali0/device/utilization /sys/devices/platform/*.mali/utilization /sys/class/devfreq/*/load; do if [ -f \$p ]; then echo \$p; break; fi; done"
+        val script = "for p in /proc/ged/gpu_load /proc/ged/hal/gpu_loading /sys/module/ged/parameters/gpu_loading /sys/kernel/ged/hal/gpu_loading /proc/gpufreq/gpu_loading /proc/gpufreq/gpufreq_var_dump /proc/mali/utilization /sys/class/misc/mali0/device/utilization /sys/devices/platform/13040000.mali/utilization /sys/devices/platform/13000000.mali/utilization /sys/devices/platform/*.mali/utilization /sys/devices/platform/*gpu*/utilization /sys/devices/platform/soc/*.mali/utilization /sys/class/kgsl/kgsl-3d0/gpubusy /sys/class/kgsl/kgsl-3d0/gpu_busy_percentage /sys/class/devfreq/*/load; do if [ -f \$p ]; then echo \$p; break; fi; done"
         val out = ShellUtils.exec(script)
         if (out.isNotBlank()) {
             val found = out.lines().firstOrNull()?.trim()
@@ -74,7 +127,7 @@ class GpuTracker : ITracker {
                         val typeFile = File(zone, "type")
                         if (typeFile.exists() && typeFile.canRead()) {
                             val type = typeFile.readText().trim().lowercase()
-                            if (type.contains("gpu") || type.contains("gpuss") || type.contains("mali") || type.contains("adreno") || type.contains("kgsl") || type.contains("g3d")) {
+                            if (type.contains("gpu") || type.contains("gpuss") || type.contains("mali") || type.contains("adreno") || type.contains("kgsl") || type.contains("g3d") || type.contains("mtktspmic") || type.contains("soc_thermal")) {
                                 val tempFile = File(zone, "temp")
                                 if (tempFile.exists() && tempFile.canRead()) {
                                     gpuThermalPath = tempFile.absolutePath
@@ -87,15 +140,28 @@ class GpuTracker : ITracker {
             }
         } catch (_: Exception) {}
 
-        val out = ShellUtils.exec("for tz in /sys/class/thermal/thermal_zone*; do t=\$(cat \$tz/type 2>/dev/null); case \$t in *gpu*|*gpuss*|*mali*|*adreno*|*kgsl*|*g3d*) echo \$tz/temp; break;; esac; done")
+        val out = ShellUtils.exec("for tz in /sys/class/thermal/thermal_zone*; do t=\$(cat \$tz/type 2>/dev/null); case \$t in *gpu*|*gpuss*|*mali*|*adreno*|*kgsl*|*g3d*|*soc_thermal*|*mtkts*) echo \$tz/temp; break;; esac; done")
         if (out.isNotBlank()) {
             gpuThermalPath = out.lines().firstOrNull()?.trim()
         }
     }
 
     private fun readGpuUsage(): Float {
-        val path = gpuBusyPath ?: return 0.0f
-        return parseGpuPath(path).coerceAtLeast(0.0f)
+        val path = gpuBusyPath
+        if (path != null) {
+            val sysfsUsage = parseGpuPath(path)
+            if (sysfsUsage > 0.0f) {
+                return sysfsUsage.coerceIn(0.0f, 100.0f)
+            }
+        }
+
+        // Seamless fallback to SurfaceFlinger GPU fence render telemetry
+        val now = System.currentTimeMillis()
+        if (now - lastSfGpuUpdateTimeMs < 3000 && surfaceFlingerGpuUsage > 0.0f) {
+            return surfaceFlingerGpuUsage.coerceIn(0.0f, 100.0f)
+        }
+
+        return 0.0f
     }
 
     private fun parseGpuPath(path: String): Float {
@@ -117,9 +183,15 @@ class GpuTracker : ITracker {
         if (rawText.isNullOrBlank()) return 0.0f
 
         try {
-            // MediaTek "gpu_load: 35" or "35%"
+            // MediaTek "gpu_loading: 35", "gpu_load: 35", "load = 35", "ged_gpu_loading: 35"
             if (rawText.contains(":")) {
-                val numPart = rawText.substringAfter(":").replace("%", "").trim().split("\\s+".toRegex()).firstOrNull()
+                val numPart = rawText.substringAfterLast(":").replace("%", "").trim().split("\\s+".toRegex()).firstOrNull()
+                val parsed = numPart?.toFloatOrNull()
+                if (parsed != null) return parsed.coerceIn(0.0f, 100.0f)
+            }
+
+            if (rawText.contains("=")) {
+                val numPart = rawText.substringAfterLast("=").replace("%", "").trim().split("\\s+".toRegex()).firstOrNull()
                 val parsed = numPart?.toFloatOrNull()
                 if (parsed != null) return parsed.coerceIn(0.0f, 100.0f)
             }
@@ -130,7 +202,7 @@ class GpuTracker : ITracker {
             }
 
             val parts = rawText.split("\\s+".toRegex())
-            // Adreno gpubusy: "busy_cycles total_cycles"
+            // Qualcomm Adreno gpubusy: "busy_cycles total_cycles"
             if (parts.size >= 2) {
                 val busy = parts[0].toDoubleOrNull() ?: 0.0
                 val total = parts[1].toDoubleOrNull() ?: 0.0
@@ -153,6 +225,20 @@ class GpuTracker : ITracker {
     }
 
     private fun readGpuTemperature(): Float {
+        // 1. Android HardwarePropertiesManager (TakoStats standard)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && hardwarePropertiesManager != null) {
+            try {
+                val temps = hardwarePropertiesManager?.getDeviceTemperatures(
+                    HardwarePropertiesManager.DEVICE_TEMPERATURE_GPU,
+                    HardwarePropertiesManager.TEMPERATURE_CURRENT
+                )
+                if (temps != null && temps.isNotEmpty() && temps[0] > -100f && temps[0] < 150f) {
+                    return temps[0]
+                }
+            } catch (_: Exception) {}
+        }
+
+        // 2. Sysfs thermal zones
         val path = gpuThermalPath ?: return -10000.0f
         try {
             val file = File(path)

@@ -52,9 +52,9 @@ class StandaloneOverlayService : Service() {
         overlayWindow = OverlayWindow(this, config)
 
         // Initialize trackers
-        trackers.add(FpsTracker())
+        trackers.add(FpsTracker(this))
         trackers.add(CpuTracker())
-        trackers.add(GpuTracker())
+        trackers.add(GpuTracker(this))
         trackers.add(BatteryTracker(this))
         trackers.add(SkinThermalTracker())
         trackers.add(MemoryTracker(this))

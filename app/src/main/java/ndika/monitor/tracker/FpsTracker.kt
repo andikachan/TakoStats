@@ -1,9 +1,12 @@
 package ndika.monitor.tracker
 
+import android.content.Context
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.Choreographer
+import android.view.WindowManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -15,8 +18,10 @@ import ndika.monitor.recorder.SessionRecorder
 import ndika.monitor.shizuku.ShizukuManager
 import ndika.monitor.util.ShellUtils
 import java.util.Collections
+import kotlin.math.max
+import kotlin.math.min
 
-class FpsTracker : ITracker, Choreographer.FrameCallback {
+class FpsTracker(private val context: Context? = null) : ITracker, Choreographer.FrameCallback {
 
     private val scope = CoroutineScope(Dispatchers.IO + Job())
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -32,19 +37,47 @@ class FpsTracker : ITracker, Choreographer.FrameCallback {
     @Volatile
     private var currentPackageName = ""
 
+    @Volatile
+    private var maxDisplayRefreshRate = 60.0f
+
     private var lastSeenTimestampNanos = 0L
     private var lastHardwareFrameTimeMs = 0L
     private var lastLayerScanTimeMs = 0L
 
+    // Sliding window of frame presentation timestamps in nanoseconds (last 1000ms)
+    private val frameTimestampHistory = Collections.synchronizedList(mutableListOf<Long>())
     private val recentFrameTimes = Collections.synchronizedList(mutableListOf<Float>())
     private val maxFrameHistory = 120
 
     // Live display VSYNC baseline
-    private var lastChoreoFrameNanos = 0L
     private var choreoFrameCount = 0
     private var choreoStartTimeMs = 0L
     @Volatile
     private var choreoFps = 60.0f
+
+    init {
+        detectDisplayRefreshRate()
+    }
+
+    private fun detectDisplayRefreshRate() {
+        try {
+            if (context != null) {
+                val display = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    context.display
+                } else {
+                    val wm = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+                    @Suppress("DEPRECATION")
+                    wm?.defaultDisplay
+                }
+                val rate = display?.mode?.refreshRate ?: display?.refreshRate ?: 60.0f
+                if (rate in 30.0f..240.0f) {
+                    maxDisplayRefreshRate = rate
+                    choreoFps = rate
+                    currentFps = rate
+                }
+            }
+        } catch (_: Exception) {}
+    }
 
     override fun start() {
         if (isRunning) return
@@ -52,10 +85,11 @@ class FpsTracker : ITracker, Choreographer.FrameCallback {
         lastSeenTimestampNanos = 0L
         lastHardwareFrameTimeMs = 0L
         lastLayerScanTimeMs = 0L
+        frameTimestampHistory.clear()
         recentFrameTimes.clear()
+        detectDisplayRefreshRate()
 
         mainHandler.post {
-            lastChoreoFrameNanos = 0L
             choreoFrameCount = 0
             choreoStartTimeMs = SystemClock.uptimeMillis()
             Choreographer.getInstance().postFrameCallback(this)
@@ -72,7 +106,7 @@ class FpsTracker : ITracker, Choreographer.FrameCallback {
         val elapsed = now - choreoStartTimeMs
         if (elapsed >= 500) {
             val fps = (choreoFrameCount * 1000.0f) / elapsed
-            choreoFps = fps.coerceIn(0.0f, 240.0f)
+            choreoFps = fps.coerceIn(0.0f, maxDisplayRefreshRate)
             choreoFrameCount = 0
             choreoStartTimeMs = now
         }
@@ -159,7 +193,7 @@ class FpsTracker : ITracker, Choreographer.FrameCallback {
             // Priority 1: SurfaceView with package name
             matchedLayer = lines.firstOrNull { l ->
                 l.contains(fgPkg, ignoreCase = true) &&
-                        l.contains("surfaceview", ignoreCase = true) &&
+                        (l.contains("surfaceview", ignoreCase = true) || l.contains("SurfaceView -", ignoreCase = true)) &&
                         !l.startsWith("Background", ignoreCase = true) &&
                         !l.startsWith("Dim", ignoreCase = true) &&
                         !l.startsWith("Snapshot", ignoreCase = true)
@@ -180,6 +214,7 @@ class FpsTracker : ITracker, Choreographer.FrameCallback {
         if (matchedLayer != null && matchedLayer != currentLayerName) {
             currentLayerName = matchedLayer
             lastSeenTimestampNanos = 0L
+            frameTimestampHistory.clear()
         }
     }
 
@@ -214,19 +249,39 @@ class FpsTracker : ITracker, Choreographer.FrameCallback {
         val lines = out.lines().map { it.trim() }.filter { it.isNotBlank() }
         if (lines.size < 2) return false
 
-        val timestamps = mutableListOf<Long>()
+        // Line 0: Refresh period in nanoseconds
+        val refreshPeriodNanos = lines[0].toLongOrNull() ?: 16666666L
+        if (refreshPeriodNanos > 0L) {
+            val calculatedHz = (1_000_000_000.0 / refreshPeriodNanos.toDouble()).toFloat()
+            if (calculatedHz in 30.0f..240.0f) {
+                maxDisplayRefreshRate = calculatedHz
+            }
+        }
+
+        val frameDataList = mutableListOf<FrameData>()
         for (i in 1 until lines.size) {
             val parts = lines[i].split("\\s+".toRegex())
             if (parts.size >= 3) {
-                val presentTime = parts[1].toLongOrNull() ?: 0L
-                if (presentTime > 0L && presentTime != Long.MAX_VALUE && presentTime != 0x7fffffffffffffffL) {
-                    timestamps.add(presentTime)
+                val appDesiredTime = parts[0].toLongOrNull() ?: 0L
+                val actualPresentTime = parts[1].toLongOrNull() ?: 0L
+                val driverReadyTime = parts[2].toLongOrNull() ?: 0L
+
+                val validPresentTime = if (actualPresentTime > 0L && actualPresentTime != Long.MAX_VALUE && actualPresentTime != 0x7fffffffffffffffL) {
+                    actualPresentTime
+                } else if (driverReadyTime > 0L && driverReadyTime != Long.MAX_VALUE && driverReadyTime != 0x7fffffffffffffffL) {
+                    driverReadyTime
+                } else {
+                    0L
+                }
+
+                if (validPresentTime > 0L) {
+                    frameDataList.add(FrameData(appDesiredTime, validPresentTime, driverReadyTime))
                 }
             }
         }
 
-        if (timestamps.isEmpty()) return false
-        return processNewTimestamps(timestamps)
+        if (frameDataList.isEmpty()) return false
+        return processNewFrames(frameDataList, refreshPeriodNanos)
     }
 
     private fun pollGfxInfoFramestats(pkg: String): Boolean {
@@ -234,7 +289,7 @@ class FpsTracker : ITracker, Choreographer.FrameCallback {
         if (out.isBlank() || !out.contains("---PROFILEDATA---")) return false
 
         var inProfile = false
-        val timestamps = mutableListOf<Long>()
+        val frameDataList = mutableListOf<FrameData>()
 
         for (line in out.lines()) {
             val trimmed = line.trim()
@@ -246,30 +301,48 @@ class FpsTracker : ITracker, Choreographer.FrameCallback {
 
             val parts = trimmed.split(",")
             if (parts.size >= 14) {
-                val completedTs = parts[13].toLongOrNull() ?: parts[1].toLongOrNull() ?: 0L
-                if (completedTs > 0L && completedTs != Long.MAX_VALUE && completedTs != 0x7fffffffffffffffL) {
-                    timestamps.add(completedTs)
+                val intendedVsync = parts[1].toLongOrNull() ?: 0L
+                val completedTs = parts[13].toLongOrNull() ?: 0L
+                val gpuDoneTs = parts[12].toLongOrNull() ?: completedTs
+
+                val validPresentTime = if (completedTs > 0L && completedTs != Long.MAX_VALUE && completedTs != 0x7fffffffffffffffL) {
+                    completedTs
+                } else {
+                    intendedVsync
+                }
+
+                if (validPresentTime > 0L) {
+                    frameDataList.add(FrameData(intendedVsync, validPresentTime, gpuDoneTs))
                 }
             }
         }
 
-        if (timestamps.isEmpty()) return false
-        return processNewTimestamps(timestamps)
+        if (frameDataList.isEmpty()) return false
+        return processNewFrames(frameDataList, 16666666L)
     }
 
-    private fun processNewTimestamps(timestamps: List<Long>): Boolean {
-        val newTimestamps = if (lastSeenTimestampNanos > 0L) {
-            timestamps.filter { it > lastSeenTimestampNanos }
+    private data class FrameData(
+        val desiredTime: Long,
+        val presentTime: Long,
+        val driverReadyTime: Long
+    )
+
+    private fun processNewFrames(frames: List<FrameData>, refreshPeriodNanos: Long): Boolean {
+        val newFrames = if (lastSeenTimestampNanos > 0L) {
+            frames.filter { it.presentTime > lastSeenTimestampNanos }
         } else {
-            timestamps.takeLast(60)
+            frames.takeLast(60)
         }
 
-        if (newTimestamps.isEmpty()) return false
+        if (newFrames.isEmpty()) return false
 
         val nowMs = SystemClock.uptimeMillis()
-        var prevTs = if (lastSeenTimestampNanos > 0L) lastSeenTimestampNanos else newTimestamps.first()
+        var prevTs = if (lastSeenTimestampNanos > 0L) lastSeenTimestampNanos else newFrames.first().presentTime
+        var totalGpuTimeNanos = 0L
+        var totalFrameTimeNanos = 0L
 
-        for (ts in newTimestamps) {
+        for (frame in newFrames) {
+            val ts = frame.presentTime
             if (ts > prevTs) {
                 val deltaNanos = ts - prevTs
                 val deltaMs = deltaNanos / 1_000_000.0f
@@ -281,28 +354,50 @@ class FpsTracker : ITracker, Choreographer.FrameCallback {
                         }
                         recentFrameTimes.add(deltaMs)
                     }
+
+                    // Hardware GPU render time estimation from driver ready fence
+                    if (frame.desiredTime > 0L && frame.driverReadyTime > frame.desiredTime) {
+                        val gpuDuration = frame.driverReadyTime - frame.desiredTime
+                        if (gpuDuration in 100_000L..100_000_000L) {
+                            totalGpuTimeNanos += gpuDuration
+                            totalFrameTimeNanos += deltaNanos
+                        }
+                    }
                 }
                 prevTs = ts
             }
         }
 
-        lastSeenTimestampNanos = newTimestamps.last()
+        // Forward hardware GPU render load to GpuTracker
+        if (totalFrameTimeNanos > 0L && totalGpuTimeNanos > 0L) {
+            val hwGpuUsage = ((totalGpuTimeNanos.toDouble() / totalFrameTimeNanos.toDouble()) * 100.0).toFloat()
+            GpuTracker.setHardwareGpuUsage(hwGpuUsage.coerceIn(0.0f, 100.0f))
+        }
+
+        lastSeenTimestampNanos = newFrames.last().presentTime
         lastHardwareFrameTimeMs = nowMs
 
-        // Calculate instantaneous FPS
-        if (newTimestamps.size >= 2) {
-            val totalDurationNanos = newTimestamps.last() - newTimestamps.first()
-            if (totalDurationNanos > 0L) {
-                val fps = ((newTimestamps.size - 1) * 1_000_000_000.0 / totalDurationNanos).toFloat()
-                currentFps = fps.coerceIn(0.0f, 240.0f)
+        // Append new timestamps to sliding history buffer (1000ms window)
+        val cutoffNanos = lastSeenTimestampNanos - 1_000_000_000L
+        synchronized(frameTimestampHistory) {
+            for (f in newFrames) {
+                frameTimestampHistory.add(f.presentTime)
             }
-        } else {
-            synchronized(recentFrameTimes) {
-                if (recentFrameTimes.isNotEmpty()) {
-                    val lastFt = recentFrameTimes.last()
-                    if (lastFt > 0f) {
-                        currentFps = (1000.0f / lastFt).coerceIn(0.0f, 240.0f)
-                    }
+            frameTimestampHistory.removeAll { it < cutoffNanos }
+
+            val count = frameTimestampHistory.size
+            if (count >= 2) {
+                val spanNanos = frameTimestampHistory.last() - frameTimestampHistory.first()
+                if (spanNanos > 0L) {
+                    val rawFps = ((count - 1) * 1_000_000_000.0 / spanNanos).toFloat()
+                    // Strict hardware cap to display refresh rate
+                    currentFps = min(rawFps, maxDisplayRefreshRate).coerceAtLeast(0.0f)
+                }
+            } else if (recentFrameTimes.isNotEmpty()) {
+                val lastFt = recentFrameTimes.last()
+                if (lastFt > 0f) {
+                    val rawFps = 1000.0f / lastFt
+                    currentFps = min(rawFps, maxDisplayRefreshRate).coerceAtLeast(0.0f)
                 }
             }
         }
@@ -312,13 +407,13 @@ class FpsTracker : ITracker, Choreographer.FrameCallback {
 
     override fun update(metrics: PerformanceMetrics) {
         val now = SystemClock.uptimeMillis()
-        val hasRecentHardwareFrames = (now - lastHardwareFrameTimeMs < 2000)
+        val hasRecentHardwareFrames = (now - lastHardwareFrameTimeMs < 1500)
 
         if (hasRecentHardwareFrames && currentFps > 0f) {
-            metrics.fps = currentFps
+            metrics.fps = min(currentFps, maxDisplayRefreshRate)
         } else {
-            // Fallback to active render VSYNC rate
-            metrics.fps = choreoFps
+            // Live render VSYNC rate bounded by screen max Hz
+            metrics.fps = min(choreoFps, maxDisplayRefreshRate)
         }
 
         if (currentLayerName.isNotBlank()) {
@@ -337,5 +432,7 @@ class FpsTracker : ITracker, Choreographer.FrameCallback {
         mainHandler.post {
             Choreographer.getInstance().removeFrameCallback(this)
         }
+        frameTimestampHistory.clear()
+        recentFrameTimes.clear()
     }
 }
