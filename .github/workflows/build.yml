@@ -34,7 +34,7 @@ jobs:
 
       - name: Build Debug APK
         run: |
-          ./gradlew assembleDebug --stacktrace --no-daemon
+          ./gradlew assembleDebug --stacktrace --no-daemon > build_log.txt 2>&1 || (cat build_log.txt | tail -n 120; exit 1)
 
       - name: Upload Debug APK Artifact
         if: always()
