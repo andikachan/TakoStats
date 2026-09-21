@@ -24,8 +24,9 @@ class ShizukuShellExecutor : IShizukuShellExecutor {
         resolveShizukuProcessMethod()
     }
 
-    private fun resolveShizukuProcessMethod() {
-        try {
+    private fun resolveShizukuProcessMethod(): Method? {
+        if (newProcessMethod != null) return newProcessMethod
+        return try {
             val method = Shizuku::class.java.getDeclaredMethod(
                 "newProcess",
                 Array<String>::class.java,
@@ -34,7 +35,10 @@ class ShizukuShellExecutor : IShizukuShellExecutor {
             )
             method.isAccessible = true
             newProcessMethod = method
-        } catch (_: Exception) {}
+            method
+        } catch (_: Exception) {
+            null
+        }
     }
 
     override fun isAvailable(): Boolean {
@@ -70,32 +74,23 @@ class ShizukuShellExecutor : IShizukuShellExecutor {
         try {
             val executionResult = withTimeoutOrNull(timeoutMs) {
                 coroutineScope {
-                    if (newProcessMethod == null) {
-                        resolveShizukuProcessMethod()
-                    }
+                    val method = resolveShizukuProcessMethod()
+                        ?: return@coroutineScope ShellResult.failure("Shizuku newProcess method reflection failed.")
 
                     val cmd = arrayOf("sh", "-c", command)
-                    val method = newProcessMethod
 
-                    process = if (method != null) {
-                        try {
-                            method.invoke(null, cmd, null, null) as? Process
-                        } catch (e: InvocationTargetException) {
-                            val target = e.targetException
-                            if (target is SecurityException) {
-                                return@coroutineScope ShellResult.failure("Shizuku SecurityException: ${target.message}")
-                            } else if (target is DeadObjectException || target is RemoteException) {
-                                return@coroutineScope ShellResult.failure("Shizuku IPC DeadObjectException: Shizuku service was terminated.")
-                            }
-                            return@coroutineScope ShellResult.failure("Process spawn error: ${target?.message ?: e.message}")
+                    process = try {
+                        method.invoke(null, cmd, null, null) as? Process
+                    } catch (e: InvocationTargetException) {
+                        val target = e.targetException
+                        if (target is SecurityException) {
+                            return@coroutineScope ShellResult.failure("Shizuku SecurityException: ${target.message}")
+                        } else if (target is DeadObjectException || target is RemoteException) {
+                            return@coroutineScope ShellResult.failure("Shizuku IPC DeadObjectException: Shizuku service was terminated.")
                         }
-                    } else {
-                        // Fallback: direct API call
-                        try {
-                            Shizuku.newProcess(cmd, null, null)
-                        } catch (e: Exception) {
-                            return@coroutineScope ShellResult.failure("Process spawn error: ${e.message}")
-                        }
+                        return@coroutineScope ShellResult.failure("Process spawn error: ${target?.message ?: e.message}")
+                    } catch (e: Exception) {
+                        return@coroutineScope ShellResult.failure("Process spawn error: ${e.message}")
                     }
 
                     val proc = process
