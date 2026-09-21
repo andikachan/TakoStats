@@ -7,8 +7,8 @@ import java.io.File
 class CpuTracker : ITracker {
 
     private var lastTotalTime = 0L
-    private var lastWorkTime = 0L
-    private var coreCount = Runtime.getRuntime().availableProcessors()
+    private var lastIdleTime = 0L
+    private val coreCount = Runtime.getRuntime().availableProcessors()
     private val coreFrequencies = IntArray(coreCount)
     private var cpuThermalPath: String? = null
 
@@ -17,9 +17,9 @@ class CpuTracker : ITracker {
     }
 
     override fun update(metrics: PerformanceMetrics) {
-        // 1. Calculate CPU Usage %
+        // 1. Calculate Real CPU Usage % from /proc/stat
         val usage = readCpuUsageFromProcStat()
-        if (usage >= 0) {
+        if (usage >= 0.0f) {
             metrics.cpuUsage = usage
         }
 
@@ -34,11 +34,6 @@ class CpuTracker : ITracker {
         }
         metrics.cpuFrequencyGhz = if (maxFreqKhz > 0) maxFreqKhz / 1_000_000.0f else 0.0f
         metrics.coreFrequencies = coreFrequencies.clone()
-
-        // Fallback usage estimation if proc/stat was unreadable
-        if (metrics.cpuUsage == 0.0f && maxFreqKhz > 0) {
-            metrics.cpuUsage = estimateCpuUsageFromFrequencies()
-        }
 
         // 3. Read CPU Temperature
         metrics.cpuTemperature = readCpuTemperature()
@@ -63,11 +58,11 @@ class CpuTracker : ITracker {
             }
         }
 
-        if (statLine.isNullOrBlank()) return -1f
+        if (statLine.isNullOrBlank()) return -1.0f
 
         try {
             val parts = statLine.trim().split("\\s+".toRegex())
-            if (parts.size < 5 || parts[0] != "cpu") return -1f
+            if (parts.size < 5 || parts[0] != "cpu") return -1.0f
 
             val user = parts[1].toLongOrNull() ?: 0L
             val nice = parts[2].toLongOrNull() ?: 0L
@@ -79,23 +74,23 @@ class CpuTracker : ITracker {
             val steal = if (parts.size > 8) parts[8].toLongOrNull() ?: 0L else 0L
 
             val total = user + nice + system + idle + iowait + irq + softirq + steal
-            val work = user + nice + system + irq + softirq + steal
+            val idleTime = idle + iowait
 
             if (lastTotalTime != 0L) {
                 val totalDelta = total - lastTotalTime
-                val workDelta = work - lastWorkTime
+                val idleDelta = idleTime - lastIdleTime
                 if (totalDelta > 0) {
-                    val percent = (workDelta.toFloat() / totalDelta.toFloat()) * 100.0f
+                    val percent = ((totalDelta - idleDelta).toFloat() / totalDelta.toFloat()) * 100.0f
                     lastTotalTime = total
-                    lastWorkTime = work
+                    lastIdleTime = idleTime
                     return percent.coerceIn(0.0f, 100.0f)
                 }
             }
             lastTotalTime = total
-            lastWorkTime = work
+            lastIdleTime = idleTime
         } catch (_: Exception) {}
 
-        return -1f
+        return -1.0f
     }
 
     private fun readCoreFrequency(core: Int): Int {
@@ -124,35 +119,6 @@ class CpuTracker : ITracker {
         return 0
     }
 
-    private fun estimateCpuUsageFromFrequencies(): Float {
-        var sumLoad = 0f
-        var count = 0
-        for (i in 0 until coreCount) {
-            val cur = coreFrequencies[i]
-            if (cur > 0) {
-                val max = readSysfsInt("/sys/devices/system/cpu/cpu$i/cpufreq/cpuinfo_max_freq")
-                val min = readSysfsInt("/sys/devices/system/cpu/cpu$i/cpufreq/cpuinfo_min_freq")
-                if (max > min && min >= 0) {
-                    val load = ((cur - min).toFloat() / (max - min).toFloat()) * 100f
-                    sumLoad += load
-                    count++
-                }
-            }
-        }
-        return if (count > 0) (sumLoad / count).coerceIn(0f, 100f) else 0f
-    }
-
-    private fun readSysfsInt(path: String): Int {
-        try {
-            val f = File(path)
-            if (f.exists() && f.canRead()) {
-                return f.readText().trim().toIntOrNull() ?: 0
-            }
-        } catch (_: Exception) {}
-        val out = ShellUtils.exec("cat $path 2>/dev/null")
-        return out.trim().toIntOrNull() ?: 0
-    }
-
     private fun findCpuThermalZone() {
         try {
             val thermalDir = File("/sys/class/thermal")
@@ -163,7 +129,7 @@ class CpuTracker : ITracker {
                         val typeFile = File(zone, "type")
                         if (typeFile.exists() && typeFile.canRead()) {
                             val type = typeFile.readText().trim().lowercase()
-                            if (type.contains("cpu") || type.contains("soc") || type.contains("tsens") || type.contains("ap") || type.contains("cluster") || type.contains("mtktscpu")) {
+                            if (type.contains("cpu") || type.contains("soc") || type.contains("tsens") || type.contains("ap") || type.contains("cluster") || type.contains("mtktscpu") || type.contains("cpu-1-0") || type.contains("cpu-0-0")) {
                                 val tempFile = File(zone, "temp")
                                 if (tempFile.exists() && tempFile.canRead()) {
                                     cpuThermalPath = tempFile.absolutePath
@@ -177,7 +143,7 @@ class CpuTracker : ITracker {
         } catch (_: Exception) {}
 
         // Fallback scan via shell
-        val out = ShellUtils.exec("for tz in /sys/class/thermal/thermal_zone*; do t=\$(cat \$tz/type 2>/dev/null); case \$t in *cpu*|*soc*|*tsens*|*ap*|*cluster*) echo \$tz/temp; break;; esac; done")
+        val out = ShellUtils.exec("for tz in /sys/class/thermal/thermal_zone*; do t=\$(cat \$tz/type 2>/dev/null); case \$t in *cpu*|*soc*|*tsens*|*ap*|*cluster*|*mtktscpu*) echo \$tz/temp; break;; esac; done")
         if (out.isNotBlank()) {
             cpuThermalPath = out.lines().firstOrNull()?.trim()
         }

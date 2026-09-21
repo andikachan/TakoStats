@@ -10,8 +10,10 @@ class GpuTracker : ITracker {
     private var gpuThermalPath: String? = null
 
     private val candidates = arrayOf(
-        "/sys/class/kgsl/kgsl-3d0/gpu_busy_percentage",
         "/sys/class/kgsl/kgsl-3d0/gpubusy",
+        "/sys/class/kgsl/kgsl-3d0/gpu_busy_percentage",
+        "/sys/module/ged/parameters/gpu_loading",
+        "/proc/ged/gpu_load",
         "/sys/devices/platform/13000000.mali/utilization",
         "/sys/devices/platform/13040000.mali/utilization",
         "/sys/devices/platform/mali.0/utilization",
@@ -83,7 +85,7 @@ class GpuTracker : ITracker {
     }
 
     private fun readGpuUsage(): Float {
-        val path = gpuBusyPath ?: return 0f
+        val path = gpuBusyPath ?: return 0.0f
         var rawText: String? = null
 
         try {
@@ -100,26 +102,30 @@ class GpuTracker : ITracker {
             }
         }
 
-        if (rawText.isNullOrBlank()) return 0f
+        if (rawText.isNullOrBlank()) return 0.0f
 
         try {
             if (rawText.contains("%")) {
-                val num = rawText.replace("%", "").trim().toFloatOrNull() ?: 0f
-                return num.coerceIn(0f, 100f)
+                val num = rawText.replace("%", "").trim().toFloatOrNull() ?: 0.0f
+                return num.coerceIn(0.0f, 100.0f)
             }
             val parts = rawText.split("\\s+".toRegex())
             if (parts.size >= 2) {
-                val busy = parts[0].toLongOrNull() ?: 0L
-                val total = parts[1].toLongOrNull() ?: 0L
+                val busy = parts[0].toDoubleOrNull() ?: 0.0
+                val total = parts[1].toDoubleOrNull() ?: 0.0
                 if (total > 0) {
-                    return ((busy.toFloat() / total.toFloat()) * 100f).coerceIn(0f, 100f)
+                    return ((busy / total) * 100.0).toFloat().coerceIn(0.0f, 100.0f)
                 }
             }
-            val singleNum = rawText.toFloatOrNull() ?: 0f
-            return singleNum.coerceIn(0f, 100f)
+            val singleNum = rawText.toFloatOrNull() ?: 0.0f
+            // If scale is 0..255 (common on Mali sysfs)
+            if (singleNum > 100.0f && singleNum <= 255.0f) {
+                return ((singleNum / 255.0f) * 100.0f).coerceIn(0.0f, 100.0f)
+            }
+            return singleNum.coerceIn(0.0f, 100.0f)
         } catch (_: Exception) {}
 
-        return 0f
+        return 0.0f
     }
 
     private fun readGpuTemperature(): Float {

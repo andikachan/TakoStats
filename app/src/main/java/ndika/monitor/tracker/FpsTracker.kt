@@ -2,6 +2,7 @@ package ndika.monitor.tracker
 
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.Choreographer
 import ndika.monitor.model.PerformanceMetrics
 import ndika.monitor.recorder.SessionRecorder
@@ -30,7 +31,7 @@ class FpsTracker : ITracker, Choreographer.FrameCallback {
         handler.post {
             lastFrameTimeNanos = 0L
             frameCount = 0
-            lastCalculationTimeMs = System.currentTimeMillis()
+            lastCalculationTimeMs = SystemClock.uptimeMillis()
             Choreographer.getInstance().postFrameCallback(this)
         }
     }
@@ -50,7 +51,7 @@ class FpsTracker : ITracker, Choreographer.FrameCallback {
         lastFrameTimeNanos = frameTimeNanos
         frameCount++
 
-        val now = System.currentTimeMillis()
+        val now = SystemClock.uptimeMillis()
         val elapsed = now - lastCalculationTimeMs
         if (elapsed >= 500) {
             val samples = minOf(frameIndex, frameTimes.size)
@@ -74,15 +75,7 @@ class FpsTracker : ITracker, Choreographer.FrameCallback {
     }
 
     override fun update(metrics: PerformanceMetrics) {
-        // Try reading hardware FPS from SurfaceFlinger if elevated access is available
-        val sfFps = querySurfaceFlingerFps()
-        if (sfFps > 0f) {
-            metrics.fps = sfFps
-        } else {
-            metrics.fps = currentFps
-        }
-
-        // Query active foreground layer name
+        // 1. Query active foreground app / layer
         val layer = queryActiveLayerName()
         if (layer.isNotBlank()) {
             metrics.layerName = layer
@@ -90,15 +83,32 @@ class FpsTracker : ITracker, Choreographer.FrameCallback {
         } else if (currentLayerName.isNotBlank()) {
             metrics.layerName = currentLayerName
         }
+
+        // 2. Query hardware game/app FPS from SurfaceFlinger
+        val sfFps = querySurfaceFlingerFps(metrics.layerName)
+        if (sfFps > 0.0f) {
+            metrics.fps = sfFps
+        } else {
+            metrics.fps = currentFps
+        }
     }
 
-    private fun querySurfaceFlingerFps(): Float {
+    private fun querySurfaceFlingerFps(layerName: String): Float {
         try {
-            val out = ShellUtils.exec("dumpsys SurfaceFlinger --latency 2>/dev/null | tail -n 60")
-            if (out.isBlank()) return -1f
+            // First try with explicit layer name, then fallback to global SurfaceFlinger latency
+            var out = ""
+            if (layerName.isNotBlank()) {
+                val pkg = if (layerName.contains("/")) layerName.substringBefore("/") else layerName
+                out = ShellUtils.exec("dumpsys SurfaceFlinger --latency \"$layerName\" 2>/dev/null || dumpsys SurfaceFlinger --latency \"$pkg\" 2>/dev/null")
+            }
+            if (out.isBlank() || out.lines().size < 3) {
+                out = ShellUtils.exec("dumpsys SurfaceFlinger --latency 2>/dev/null | tail -n 120")
+            }
+
+            if (out.isBlank()) return -1.0f
 
             val lines = out.lines()
-            if (lines.size < 5) return -1f
+            if (lines.size < 5) return -1.0f
 
             val timestamps = mutableListOf<Long>()
             for (line in lines) {
@@ -115,7 +125,7 @@ class FpsTracker : ITracker, Choreographer.FrameCallback {
                 val validTimestamps = if (lastSurfaceFlingerTimestamp > 0L) {
                     timestamps.filter { it > lastSurfaceFlingerTimestamp }
                 } else {
-                    timestamps.takeLast(30)
+                    timestamps.takeLast(60)
                 }
 
                 if (validTimestamps.isNotEmpty()) {
@@ -124,13 +134,13 @@ class FpsTracker : ITracker, Choreographer.FrameCallback {
                         val durationNanos = validTimestamps.last() - validTimestamps.first()
                         if (durationNanos > 0) {
                             val fps = ((validTimestamps.size - 1) * 1_000_000_000.0 / durationNanos).toFloat()
-                            return fps.coerceIn(0f, 240f)
+                            return fps.coerceIn(0.0f, 240.0f)
                         }
                     }
                 }
             }
         } catch (_: Exception) {}
-        return -1f
+        return -1.0f
     }
 
     private fun queryActiveLayerName(): String {
@@ -139,6 +149,14 @@ class FpsTracker : ITracker, Choreographer.FrameCallback {
             if (out.isNotBlank()) {
                 val regex = Regex("([a-zA-Z0-9_.]+/[a-zA-Z0-9_.]+)")
                 val match = regex.find(out)
+                if (match != null) {
+                    return match.value
+                }
+            }
+            val actOut = ShellUtils.exec("dumpsys activity activities 2>/dev/null | grep -E 'mResumedActivity|topResumedActivity'")
+            if (actOut.isNotBlank()) {
+                val regex = Regex("([a-zA-Z0-9_.]+/[a-zA-Z0-9_.]+)")
+                val match = regex.find(actOut)
                 if (match != null) {
                     return match.value
                 }
