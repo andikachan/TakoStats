@@ -285,7 +285,7 @@ class FpsTracker(private val context: Context? = null) : ITracker, Choreographer
     }
 
     private fun pollGfxInfoFramestats(pkg: String): Boolean {
-        val out = ShellUtils.exec("dumpsys gfxinfo \"$pkg\" framestats 2>/dev/null")
+        val out = ShellUtils.exec("dumpsys gfxinfo $pkg framestats 2>/dev/null")
         if (out.isBlank() || !out.contains("---PROFILEDATA---")) return false
 
         var inProfile = false
@@ -340,7 +340,6 @@ class FpsTracker(private val context: Context? = null) : ITracker, Choreographer
         var prevTs = if (lastSeenTimestampNanos > 0L) lastSeenTimestampNanos else newFrames.first().presentTime
         var totalGpuTimeNanos = 0L
         var totalFrameTimeNanos = 0L
-        var lastDeltaMs = 16.6f
 
         for (frame in newFrames) {
             val ts = frame.presentTime
@@ -348,7 +347,6 @@ class FpsTracker(private val context: Context? = null) : ITracker, Choreographer
                 val deltaNanos = ts - prevTs
                 val deltaMs = deltaNanos / 1_000_000.0f
                 if (deltaMs in 0.5f..1000.0f) {
-                    lastDeltaMs = deltaMs
                     SessionRecorder.recordFrameTime(deltaMs)
                     synchronized(recentFrameTimes) {
                         if (recentFrameTimes.size >= maxFrameHistory) {
@@ -370,12 +368,11 @@ class FpsTracker(private val context: Context? = null) : ITracker, Choreographer
             }
         }
 
-        // Forward hardware GPU render load & frame workload to GpuTracker
+        // Forward hardware GPU render load to GpuTracker
         if (totalFrameTimeNanos > 0L && totalGpuTimeNanos > 0L) {
             val hwGpuUsage = ((totalGpuTimeNanos.toDouble() / totalFrameTimeNanos.toDouble()) * 100.0).toFloat()
             GpuTracker.setHardwareGpuUsage(hwGpuUsage.coerceIn(0.0f, 100.0f))
         }
-        GpuTracker.updateFrameRenderWorkload(lastDeltaMs, maxDisplayRefreshRate)
 
         lastSeenTimestampNanos = newFrames.last().presentTime
         lastHardwareFrameTimeMs = nowMs
@@ -393,7 +390,7 @@ class FpsTracker(private val context: Context? = null) : ITracker, Choreographer
                 val spanNanos = frameTimestampHistory.last() - frameTimestampHistory.first()
                 if (spanNanos > 0L) {
                     val rawFps = ((count - 1) * 1_000_000_000.0 / spanNanos).toFloat()
-                    // Strict hardware cap to display refresh rate (e.g. max 60.0 FPS on 60Hz screen)
+                    // Strict hardware cap to display refresh rate
                     currentFps = min(rawFps, maxDisplayRefreshRate).coerceAtLeast(0.0f)
                 }
             } else if (recentFrameTimes.isNotEmpty()) {

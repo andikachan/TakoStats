@@ -118,4 +118,7 @@
     <string name="red">Merah</string>
     <string name="green">Hijau</string>
     <string name="blue">Biru</string>
+
+    <string name="game_booster">Game Booster Engine</string>
+    <string name="game_booster_summary">Optimasi performa ekstrim, bypass thermal throttling, kompilasi AOT Dex, dan CPU pinning</string>
 </resources>

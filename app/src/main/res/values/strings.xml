@@ -118,4 +118,7 @@
     <string name="red">Red</string>
     <string name="green">Green</string>
     <string name="blue">Blue</string>
+
+    <string name="game_booster">Game Booster Engine</string>
+    <string name="game_booster_summary">Extreme performance optimizations, thermal bypass, AOT Dex compile, and core pinning</string>
 </resources>

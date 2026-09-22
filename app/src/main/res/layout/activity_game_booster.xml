@@ -91,6 +91,198 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
+            <!-- Mode Selector Card (Extreme Beast vs Standard) -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="2dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Optimization Profile"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/tvModeBadge"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:background="#D32F2F"
+                            android:paddingHorizontal="8dp"
+                            android:paddingVertical="3dp"
+                            android:text="🔥 EXTREME BEAST"
+                            android:textColor="#FFFFFF"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tvModeDescription"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Maximum uncapped performance. Thermal throttling bypassed, PowerHAL fixed clocks locked, 100% AOT native compilation, and background frozen."
+                        android:textSize="13sp"
+                        android:textColor="?android:attr/textColorSecondary"
+                        android:layout_marginTop="6dp" />
+
+                    <RadioGroup
+                        android:id="@+id/rgBoostMode"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_marginTop="12dp">
+
+                        <RadioButton
+                            android:id="@+id/rbExtremeBeast"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:checked="true"
+                            android:text="🔥 Extreme Beast" />
+
+                        <RadioButton
+                            android:id="@+id/rbStandardBoost"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="⚡ Standard" />
+                    </RadioGroup>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Target Game Selector Card -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardTargetGame"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="2dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Target Game / Application"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:layout_marginTop="12dp">
+
+                        <ImageView
+                            android:id="@+id/imgSelectedGameIcon"
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:src="@drawable/ic_stat_fps" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="12dp"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:id="@+id/tvSelectedGameName"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Select a game..."
+                                android:textSize="16sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvSelectedGamePackage"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="No target package selected"
+                                android:textColor="?android:attr/textColorSecondary"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnChangeGame"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Change"
+                            style="@style/Widget.Material3.Button.TonalButton" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_marginTop="12dp">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnCompileAotOnly"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="⚡ AOT Native Compile (Anti-Stutter)"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            app:cornerRadius="10dp" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Active Tweaks Overview Card -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="2dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Active Optimization Modules"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="• 🔥 Thermal Throttling Bypass (cmd thermalservice override 0)\n• ⚡ PowerHAL Sustained Performance Lock\n• 🎮 120Hz Force Lock &amp; Zero SurfaceFlinger Latency\n• 🏎️ CPU Renice -20 &amp; Big-Core Pinning (taskset)\n• 🎯 Android Game Intervention API (Mode 2: Perf, 120 FPS)\n• 🚀 100% ART AOT Native Machine Compilation\n• 🌐 Low Latency Gaming DNS (1.1.1.1) &amp; Network Lock\n• 🚫 Disable Virtual RAM / RAM Plus (Anti-Stutter)\n• 🔕 Total Game DND &amp; Disable Heads-Up Popups\n• 💥 Kill Joyose &amp; Samsung GOS Throttler Daemons"
+                        android:textSize="12.5sp"
+                        android:textColor="?android:attr/textColorSecondary"
+                        android:lineSpacingExtra="3dp"
+                        android:layout_marginTop="8dp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
             <!-- Thermal & Memory Watchdog Card -->
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
@@ -146,7 +338,7 @@
                                 android:id="@+id/tvThermalThrottleWarning"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Throttling Risk (&gt;= 40°C)"
+                                android:text="Throttling Risk"
                                 android:textColor="#E53935"
                                 android:textSize="11sp"
                                 android:textStyle="bold"
@@ -205,59 +397,7 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Installed Games Quick Launcher -->
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/cardInstalledGames"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp"
-                app:cardCornerRadius="16dp"
-                app:cardElevation="2dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="16dp">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Installed Games"
-                        android:textSize="16sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Tap a game to optimize system &amp; launch instantly"
-                        android:textSize="12sp"
-                        android:textColor="?android:attr/textColorSecondary"
-                        android:layout_marginTop="2dp" />
-
-                    <androidx.recyclerview.widget.RecyclerView
-                        android:id="@+id/rvGames"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
-                        android:orientation="horizontal"
-                        app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
-                        tools:listitem="@layout/item_game_app" />
-
-                    <TextView
-                        android:id="@+id/tvNoGamesDetected"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
-                        android:gravity="center"
-                        android:text="No dedicated game apps detected"
-                        android:textColor="?android:attr/textColorSecondary"
-                        android:textSize="13sp"
-                        android:visibility="gone" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- Boost Execution Card -->
+            <!-- Action Controls Card -->
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -274,17 +414,9 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Pre-Game Optimization"
+                        android:text="Execute Optimization"
                         android:textSize="16sp"
                         android:textStyle="bold" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="• Auto Storage Trim (sm fstrim) for eMMC 5.1/UFS\n• Purge background bloatware (am force-stop)\n• Fixed Performance Mode (PowerHAL)"
-                        android:textSize="13sp"
-                        android:textColor="?android:attr/textColorSecondary"
-                        android:layout_marginTop="6dp" />
 
                     <com.google.android.material.progressindicator.LinearProgressIndicator
                         android:id="@+id/progressBoost"
@@ -292,8 +424,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="16dp"
                         android:visibility="gone"
-                        android:indeterminate="false"
-                        android:max="100" />
+                        android:indeterminate="true" />
 
                     <TextView
                         android:id="@+id/tvBoostProgressMessage"
@@ -305,18 +436,27 @@
                         android:layout_marginTop="8dp" />
 
                     <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnBoostAndLaunch"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="🚀 BOOST &amp; LAUNCH GAME"
+                        android:layout_marginTop="16dp"
+                        app:cornerRadius="12dp" />
+
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnBoostNow"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="BOOST GAME PERFORMANCE"
-                        android:layout_marginTop="16dp"
+                        android:text="⚡ QUICK SYSTEM BOOST ONLY"
+                        android:layout_marginTop="8dp"
+                        style="@style/Widget.Material3.Button.TonalButton"
                         app:cornerRadius="12dp" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnRestoreDefaults"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="RESTORE SYSTEM DEFAULTS"
+                        android:text="🔄 RESTORE SYSTEM DEFAULTS"
                         android:layout_marginTop="8dp"
                         style="@style/Widget.Material3.Button.OutlinedButton"
                         app:cornerRadius="12dp" />
@@ -341,7 +481,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Optimization Report"
+                        android:text="Optimization Execution Report"
                         android:textSize="16sp"
                         android:textStyle="bold" />
 
