@@ -3,9 +3,14 @@ name: Build and Release APK
 on:
   push:
     branches: [ main ]
+    tags:
+      - 'v*'
   pull_request:
     branches: [ main ]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -14,6 +19,8 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -34,9 +41,46 @@ jobs:
       - name: Build Debug APK
         run: ./gradlew assembleDebug --stacktrace --no-daemon
 
+      - name: Prepare Release Asset
+        run: |
+          mkdir -p release-output
+          cp app/build/outputs/apk/debug/*.apk release-output/TakoStats-v1.2.0.apk
+
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TakoStats-Debug-APK
-          path: app/build/outputs/apk/debug/*.apk
+          name: TakoStats-v1.2.0
+          path: release-output/TakoStats-v1.2.0.apk
           retention-days: 14
+
+      - name: Create GitHub Release
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'v1.2.0' }}
+          name: ${{ github.ref_type == 'tag' && github.ref_name || 'TakoStats v1.2.0 - Extreme Beast Game Booster' }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## 🚀 TakoStats v1.2.0 - Extreme Beast Game Booster Release
+
+            ### ✨ Highlights & New Features:
+            - **🔥 Extreme Beast Mode**: Uncapped maximum gaming performance with thermal throttling bypass (`cmd thermalservice override-status 0`).
+            - **⚡ Sustained PowerHAL Performance**: Sustained high-frequency CPU/GPU clock locking and adaptive battery disabling.
+            - **🚀 100% ART AOT Native Machine Compilation**: Ahead-of-time DEX compilation (`-m everything` / `-m speed`) to eliminate in-game micro-stuttering.
+            - **🖥️ SurfaceFlinger & 120Hz Overdrive**: Display refresh rate locking, zero buffer queue backpressure, and Skia Vulkan hardware rendering.
+            - **🏎️ CPU Scheduling & Big-Core Pinning**: Real-time priority elevation (`renice -20`) and CPU affinity pinning (`taskset`) to prime cores.
+            - **🎯 Android Game Intervention API**: Android 12+ Game Dashboard injection (Mode 2: Performance + 120 FPS + Production GPU Game Driver).
+            - **💥 Neutralize Vendor Throttlers**: Automatically terminates throttling daemons (Xiaomi Joyose, Samsung GOS, GameTools).
+            - **🚫 Anti-Stutter Virtual RAM Disable**: Disables slow UFS flash virtual memory swapping.
+            - **🌐 Ultra Low-Latency Network**: Bandwidth lockdown and Cloudflare Gaming DNS (1.1.1.1) integration.
+            - **🔕 Game Focus Mode**: Total Zen Mode DND and suppression of floating heads-up notifications.
+            - **🧹 Storage & Memory Trim**: Flash UFS/eMMC TRIM (`sm fstrim`) and logcat buffer flushing.
+            - **🎮 Integrated Game Selector**: Built-in BottomSheet dialog for selecting installed games with automated boost & launch.
+
+            ### 📦 Downloads:
+            Download the attached `TakoStats-v1.2.0.apk` below and install directly on your Android device.
+          files: release-output/TakoStats-v1.2.0.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
