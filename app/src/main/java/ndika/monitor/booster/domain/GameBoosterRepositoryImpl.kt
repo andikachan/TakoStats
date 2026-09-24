@@ -18,6 +18,8 @@ import ndika.monitor.booster.model.BoostConstants
 import ndika.monitor.booster.model.BoostMode
 import ndika.monitor.booster.model.BoostProgress
 import ndika.monitor.booster.model.BoostStepType
+import ndika.monitor.booster.model.DeviceProfileType
+import ndika.monitor.booster.model.DeviceSpoofPreset
 import ndika.monitor.booster.model.GameAppInfo
 import ndika.monitor.booster.model.GameBoostConfig
 import ndika.monitor.booster.model.ResolutionDownscalePreset
@@ -257,17 +259,56 @@ class GameBoosterRepositoryImpl(
         }
 
         // -------------------------------------------------------------
-        // Step 10: Android Game Intervention API & Vulkan Driver Opt-in
+        // Step 10: Device Model Spoofing (Flagship 120 FPS vs Potato Low-Res)
+        // -------------------------------------------------------------
+        if (config.deviceSpoofPreset != DeviceSpoofPreset.NONE) {
+            emit(BoostProgress.InProgress(
+                step = BoostStepType.DEVICE_SPOOFING,
+                progressPercentage = 68,
+                message = "Spoofing device identity as ${config.deviceSpoofPreset.displayName}..."
+            ))
+            val spoof = config.deviceSpoofPreset
+
+            // 1. Root resetprop injection (if root privileges exist)
+            shellExecutor.executeCommand("resetprop ro.product.model \"${spoof.model}\" 2>/dev/null; resetprop ro.product.manufacturer \"${spoof.manufacturer}\" 2>/dev/null; resetprop ro.product.brand \"${spoof.brand}\" 2>/dev/null; resetprop ro.product.device \"${spoof.device}\" 2>/dev/null; resetprop ro.product.name \"${spoof.model}\" 2>/dev/null", timeoutMs = 2000L)
+
+            // 2. Android Settings & System properties hooks (Shizuku-compatible)
+            shellExecutor.executeCommand("settings put system custom_model \"${spoof.model}\" 2>/dev/null", timeoutMs = 2000L)
+            shellExecutor.executeCommand("settings put secure custom_model \"${spoof.model}\" 2>/dev/null", timeoutMs = 2000L)
+            shellExecutor.executeCommand("settings put global custom_model \"${spoof.model}\" 2>/dev/null", timeoutMs = 2000L)
+            shellExecutor.executeCommand("setprop debug.model \"${spoof.model}\" 2>/dev/null", timeoutMs = 2000L)
+            shellExecutor.executeCommand("setprop persist.sys.device_name \"${spoof.displayName}\" 2>/dev/null", timeoutMs = 2000L)
+
+            // If Potato Profile, apply downscaling automatically for low-end potato graphics on modern phones
+            if (spoof.category == DeviceProfileType.POTATO_LEGACY && spoof.recommendedDownscale != null) {
+                applyResolutionDownscale(spoof.recommendedDownscale)
+                if (!config.targetGamePackage.isNullOrBlank()) {
+                    shellExecutor.executeCommand("cmd game set --downscale ${spoof.recommendedDownscale} ${config.targetGamePackage}", timeoutMs = 2000L)
+                }
+                logSummary.add("• Device Spoof: 🥔 Potato Mode (${spoof.displayName}) -> Low-end textures & ${(spoof.recommendedDownscale * 100).toInt()}% render scale.")
+            } else {
+                // If Gaming Flagship, unlock 120/144 FPS
+                if (!config.targetGamePackage.isNullOrBlank()) {
+                    shellExecutor.executeCommand("settings put global high_refresh_rate_whitelist \"${config.targetGamePackage}\"", timeoutMs = 2000L)
+                    shellExecutor.executeCommand("settings put global high_refresh_rate_blacklist \"\"", timeoutMs = 2000L)
+                }
+                logSummary.add("• Device Spoof: 🎮 Gaming Flagship (${spoof.displayName}) -> 90/120 FPS & Ultra Graphics unlocked.")
+            }
+        }
+
+        // -------------------------------------------------------------
+        // Step 11: Android Game Intervention API & Vulkan Driver Opt-in
         // -------------------------------------------------------------
         if (!config.targetGamePackage.isNullOrBlank()) {
+            val targetFps = if (config.deviceSpoofPreset != DeviceSpoofPreset.NONE) config.deviceSpoofPreset.targetFps else config.targetFps
             emit(BoostProgress.InProgress(
                 step = BoostStepType.GAME_MODE_API,
-                progressPercentage = 70,
-                message = "Injecting Android Game Intervention (Mode 2: Performance, ${config.targetFps} FPS, ANGLE)..."
+                progressPercentage = 72,
+                message = "Injecting Android Game Intervention (Mode 2: Performance, $targetFps FPS, ANGLE)..."
             ))
             val gamePkg = config.targetGamePackage
             shellExecutor.executeCommand("cmd game set --mode 2 $gamePkg", timeoutMs = 3000L)
-            shellExecutor.executeCommand("cmd game set --fps ${config.targetFps} $gamePkg", timeoutMs = 3000L)
+            shellExecutor.executeCommand("cmd game set --fps $targetFps $gamePkg", timeoutMs = 3000L)
             shellExecutor.executeCommand("cmd game set --angle-enabled true $gamePkg", timeoutMs = 3000L)
             if (config.downscaleRatio != null && config.downscaleRatio in 0.5f..0.9f) {
                 shellExecutor.executeCommand("cmd game set --downscale ${config.downscaleRatio} $gamePkg", timeoutMs = 3000L)
@@ -275,7 +316,7 @@ class GameBoosterRepositoryImpl(
             shellExecutor.executeCommand("settings put global updatable_driver_production_opt_in_apps $gamePkg", timeoutMs = 2000L)
             shellExecutor.executeCommand("settings put global updatable_driver_prerelease_opt_in_apps $gamePkg", timeoutMs = 2000L)
             shellExecutor.executeCommand("settings put global driver_build_time 9999999999", timeoutMs = 2000L)
-            logSummary.add("• Game Intervention: Mode 2 + ${config.targetFps} FPS + ANGLE Vulkan translation.")
+            logSummary.add("• Game Intervention: Mode 2 + $targetFps FPS + ANGLE Vulkan translation.")
         }
 
         // -------------------------------------------------------------

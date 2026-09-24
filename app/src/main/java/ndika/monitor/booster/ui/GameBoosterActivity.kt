@@ -102,6 +102,10 @@ class GameBoosterActivity : AppCompatActivity() {
             }
         }
 
+        binding.btnSelectDeviceSpoof.setOnClickListener {
+            showDeviceSpoofDialog()
+        }
+
         binding.btnChangeGame.setOnClickListener {
             showGameSelectionDialog()
         }
@@ -132,6 +136,7 @@ class GameBoosterActivity : AppCompatActivity() {
                         updateSelectedGameView(state.selectedGame)
                         updateWatchdogView(state)
                         updateBoostProgressView(state)
+                        updateDeviceSpoofBadge(state.config.deviceSpoofPreset)
 
                         if (!state.statusMessage.isNullOrBlank() && !state.isBoosting) {
                             Toast.makeText(this@GameBoosterActivity, state.statusMessage, Toast.LENGTH_SHORT).show()
@@ -300,6 +305,53 @@ class GameBoosterActivity : AppCompatActivity() {
         }
 
         dialog.show()
+    }
+
+    private fun showDeviceSpoofDialog() {
+        val presets = ndika.monitor.booster.model.DeviceSpoofPreset.values()
+        val items = presets.map { preset ->
+            val icon = when (preset.category) {
+                ndika.monitor.booster.model.DeviceProfileType.GAMING_FLAGSHIP -> "🎮 "
+                ndika.monitor.booster.model.DeviceProfileType.POTATO_LEGACY -> "🥔 "
+                ndika.monitor.booster.model.DeviceProfileType.NONE -> "📱 "
+            }
+            "$icon${preset.displayName} [${preset.badge}]"
+        }.toTypedArray()
+
+        val currentPreset = viewModel.uiState.value.config.deviceSpoofPreset
+        val checkedItem = presets.indexOf(currentPreset).coerceAtLeast(0)
+
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle("Select Device Identity Profile")
+            .setSingleChoiceItems(items, checkedItem) { dialog, which ->
+                val selected = presets[which]
+                viewModel.setDeviceSpoofPreset(selected)
+                updateDeviceSpoofBadge(selected)
+                dialog.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun updateDeviceSpoofBadge(preset: ndika.monitor.booster.model.DeviceSpoofPreset) {
+        binding.tvSpoofBadge.text = preset.badge
+        when (preset.category) {
+            ndika.monitor.booster.model.DeviceProfileType.GAMING_FLAGSHIP -> {
+                binding.tvSpoofBadge.setBackgroundColor(Color.parseColor("#D32F2F"))
+                binding.btnSelectDeviceSpoof.text = "🎮 " + preset.displayName
+                binding.tvSpoofDescription.text = "Spoofed as Flagship Gaming Phone (${preset.model}). Unlocks 90/120 FPS in MLBB, PUBG, CODM & High Refresh Rate."
+            }
+            ndika.monitor.booster.model.DeviceProfileType.POTATO_LEGACY -> {
+                binding.tvSpoofBadge.setBackgroundColor(Color.parseColor("#E65100"))
+                binding.btnSelectDeviceSpoof.text = "🥔 " + preset.displayName
+                binding.tvSpoofDescription.text = "Spoofed as Potato/Legacy Phone (${preset.model}). Games will load low-poly textures & low render scale for maximum smoothness."
+            }
+            ndika.monitor.booster.model.DeviceProfileType.NONE -> {
+                binding.tvSpoofBadge.setBackgroundColor(Color.parseColor("#616161"))
+                binding.btnSelectDeviceSpoof.text = "📱 Original Device (No Spoof)"
+                binding.tvSpoofDescription.text = "Spoof as Flagship Gaming Phone to unlock 90/120 FPS, or as Legacy Potato Phone to force low-poly ultra-light rendering on modern devices."
+            }
+        }
     }
 
     private fun handleWatchdogAlert(alert: WatchdogAlertEvent) {
