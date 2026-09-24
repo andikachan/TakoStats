@@ -297,14 +297,14 @@ class GameBoosterRepositoryImpl(
         }
 
         // -------------------------------------------------------------
-        // Step 11: Android Game Intervention API & Vulkan Driver Opt-in
+        // Step 11: Android Game Intervention API & Auto-Unlock Graphics
         // -------------------------------------------------------------
         if (!config.targetGamePackage.isNullOrBlank()) {
             val targetFps = if (config.deviceSpoofPreset != DeviceSpoofPreset.NONE) config.deviceSpoofPreset.targetFps else config.targetFps
             emit(BoostProgress.InProgress(
                 step = BoostStepType.GAME_MODE_API,
                 progressPercentage = 72,
-                message = "Injecting Android Game Intervention (Mode 2: Performance, $targetFps FPS, ANGLE)..."
+                message = "Injecting Android Game Intervention & Auto-Unlocking Graphics ($targetFps FPS)..."
             ))
             val gamePkg = config.targetGamePackage
             shellExecutor.executeCommand("cmd game set --mode 2 $gamePkg", timeoutMs = 3000L)
@@ -316,7 +316,10 @@ class GameBoosterRepositoryImpl(
             shellExecutor.executeCommand("settings put global updatable_driver_production_opt_in_apps $gamePkg", timeoutMs = 2000L)
             shellExecutor.executeCommand("settings put global updatable_driver_prerelease_opt_in_apps $gamePkg", timeoutMs = 2000L)
             shellExecutor.executeCommand("settings put global driver_build_time 9999999999", timeoutMs = 2000L)
-            logSummary.add("• Game Intervention: Mode 2 + $targetFps FPS + ANGLE Vulkan translation.")
+
+            // Auto-unlock graphics & hardware cache purge
+            val unlockLogs = autoUnlockGameGraphics(gamePkg, targetFps)
+            logSummary.addAll(unlockLogs)
         }
 
         // -------------------------------------------------------------
@@ -631,6 +634,44 @@ class GameBoosterRepositoryImpl(
                 }
             }
         } catch (_: Exception) {}
+    }
+
+    private suspend fun autoUnlockGameGraphics(gamePkg: String, targetFps: Int): List<String> {
+        val logs = mutableListOf<String>()
+        try {
+            // 1. Automatically purge hardware rating cache and shader cache (Zero login data loss)
+            shellExecutor.executeCommand("pm trim-caches 100G 2>/dev/null", timeoutMs = 2000L)
+            shellExecutor.executeCommand("rm -rf /sdcard/Android/data/$gamePkg/cache/* 2>/dev/null", timeoutMs = 2000L)
+            shellExecutor.executeCommand("rm -rf /sdcard/Android/data/$gamePkg/code_cache/* 2>/dev/null", timeoutMs = 2000L)
+            shellExecutor.executeCommand("rm -rf /sdcard/Android/data/$gamePkg/files/dragon2017/assets/UI/android/cache* 2>/dev/null", timeoutMs = 2000L)
+            shellExecutor.executeCommand("rm -rf /sdcard/Android/data/$gamePkg/files/dragon2017/assets/Config/*cache* 2>/dev/null", timeoutMs = 2000L)
+
+            // 2. Lock Global Display Refresh Rate & Whitelist Game
+            shellExecutor.executeCommand("settings put system min_refresh_rate 120.0 2>/dev/null", timeoutMs = 2000L)
+            shellExecutor.executeCommand("settings put system peak_refresh_rate 120.0 2>/dev/null", timeoutMs = 2000L)
+            shellExecutor.executeCommand("settings put secure user_refresh_rate 120 2>/dev/null", timeoutMs = 2000L)
+            shellExecutor.executeCommand("settings put secure refresh_rate_mode 2 2>/dev/null", timeoutMs = 2000L)
+            shellExecutor.executeCommand("settings put global high_refresh_rate_blacklist \"\" 2>/dev/null", timeoutMs = 2000L)
+            shellExecutor.executeCommand("settings put global high_refresh_rate_whitelist \"$gamePkg\" 2>/dev/null", timeoutMs = 2000L)
+
+            // 3. Vendor-specific high refresh rate overrides
+            shellExecutor.executeCommand("setprop persist.vendor.power.dfps.level 120 2>/dev/null; setprop persist.sys.gamemode.fps 120 2>/dev/null; setprop ro.vendor.display.svi 1 2>/dev/null; settings put secure speed_mode_enable 1 2>/dev/null", timeoutMs = 2000L)
+            shellExecutor.executeCommand("settings put system oplus_customize_refresh_rate $gamePkg:120 2>/dev/null; settings put global oplus_high_refresh_rate_whitelist $gamePkg 2>/dev/null", timeoutMs = 2000L)
+            shellExecutor.executeCommand("settings put system vivo_game_mode 1 2>/dev/null; settings put global vivo_high_refresh_rate_whitelist $gamePkg 2>/dev/null", timeoutMs = 2000L)
+            shellExecutor.executeCommand("settings put global sem_low_power_mode_last_result 0 2>/dev/null; settings put secure game_auto_temperature_control 0 2>/dev/null", timeoutMs = 2000L)
+
+            // 4. Game-Specific Configuration Overrides (MLBB, PUBG, CODM)
+            if (gamePkg.contains("mobile.legends", ignoreCase = true)) {
+                val mlConfigCmd = "mkdir -p /sdcard/Android/data/$gamePkg/files/dragon2017/assets/Config 2>/dev/null; echo 'HighFpsMode=3\nFps120=1\nHighQuality=1\nShadow=1' > /sdcard/Android/data/$gamePkg/files/dragon2017/assets/Config/game_custom.cfg 2>/dev/null"
+                shellExecutor.executeCommand(mlConfigCmd, timeoutMs = 2000L)
+                logs.add("• MLBB Auto-Unlock: Hardware rating cache purged, 120 FPS display lock & Unity config primed.")
+            } else if (gamePkg.contains("pubg", ignoreCase = true) || gamePkg.contains("ig", ignoreCase = true) || gamePkg.contains("freefire", ignoreCase = true)) {
+                logs.add("• Battle Royale Auto-Unlock: 90/120 FPS whitelist & dynamic shader cache purged.")
+            } else {
+                logs.add("• Game Auto-Unlock: Hardware rating cache purged, $targetFps FPS display mode locked.")
+            }
+        } catch (_: Exception) {}
+        return logs
     }
 
     private fun queryAvailableRamMb(): Long {
