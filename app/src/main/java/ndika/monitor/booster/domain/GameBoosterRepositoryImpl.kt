@@ -564,7 +564,7 @@ class GameBoosterRepositoryImpl(
         }
     }.flowOn(Dispatchers.IO)
 
-    private fun applyResolutionDownscale(scale: Float) {
+    private suspend fun applyResolutionDownscale(scale: Float) {
         try {
             val sizeOut = shellExecutor.executeCommand("wm size", timeoutMs = 2000L).stdout
             val densityOut = shellExecutor.executeCommand("wm density", timeoutMs = 2000L).stdout
