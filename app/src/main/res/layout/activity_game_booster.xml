@@ -244,10 +244,94 @@
                             android:id="@+id/btnCompileAotOnly"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="⚡ AOT Native Compile (Anti-Stutter)"
+                            android:text="⚡ Deep AOT Compilation (Primary + Split DEX)"
                             style="@style/Widget.Material3.Button.OutlinedButton"
                             app:cornerRadius="10dp" />
                     </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Resolution & GPU Downscale Preset Card -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="2dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="GPU Render Resolution Downscaler"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/tvResolutionBadge"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:background="#2E7D32"
+                            android:paddingHorizontal="8dp"
+                            android:paddingVertical="3dp"
+                            android:text="100% NATIVE"
+                            android:textColor="#FFFFFF"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Downscale display render resolution &amp; DPI to massively reduce GPU load and double framerates on heavy games."
+                        android:textSize="13sp"
+                        android:textColor="?android:attr/textColorSecondary"
+                        android:layout_marginTop="6dp" />
+
+                    <RadioGroup
+                        android:id="@+id/rgResolutionPreset"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:layout_marginTop="10dp">
+
+                        <RadioButton
+                            android:id="@+id/rbResNative"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:checked="true"
+                            android:text="🖥️ Native (100% - Default Sharpness)" />
+
+                        <RadioButton
+                            android:id="@+id/rbRes85"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="⚡ 85% Resolution (Ultra-Smooth + Balanced)" />
+
+                        <RadioButton
+                            android:id="@+id/rbRes70"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="🚀 70% Resolution (High FPS / Heavy Games)" />
+
+                        <RadioButton
+                            android:id="@+id/rbRes50"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="🔥 50% Resolution (Extreme Beast Max FPS)" />
+                    </RadioGroup>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -275,7 +359,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="• 🔥 Thermal Throttling Bypass (cmd thermalservice override 0)\n• ⚡ PowerHAL Sustained Performance Lock\n• 🎮 120Hz Force Lock &amp; Zero SurfaceFlinger Latency\n• 🏎️ CPU Renice -20 &amp; Big-Core Pinning (taskset)\n• 🎯 Android Game Intervention API (Mode 2: Perf, 120 FPS)\n• 🚀 100% ART AOT Native Machine Compilation\n• 🌐 Low Latency Gaming DNS (1.1.1.1) &amp; Network Lock\n• 🚫 Disable Virtual RAM / RAM Plus (Anti-Stutter)\n• 🔕 Total Game DND &amp; Disable Heads-Up Popups\n• 💥 Kill Joyose &amp; Samsung GOS Throttler Daemons"
+                        android:text="• 🔥 Thermal Throttling Bypass (cmd thermalservice override 0)\n• ⚡ PowerHAL Sustained Performance Lock\n• 🏎️ CPU Uclamp 100% (1024) &amp; SchedTune Prime-Core Boost\n• 🎮 GPU Devfreq Max Clocks &amp; Power Rails Forcing (kgsl/GED)\n• 🧠 Linux Kernel VM Memory Compaction &amp; Drop Caches\n• 🛡️ Anti-Kill OOM Shield (-1000) for Target Game\n• 🎯 Android Game Intervention &amp; ANGLE Vulkan Driver\n• 🚀 Deep AOT Compilation (Primary + Split DEX)\n• 🖥️ SurfaceFlinger Early Phase Zero-Latency Offsets\n• 👆 Low Input Delay (Touch Slop 2px) &amp; FIFO UI Scheduling\n• 📶 Wi-Fi Low-Latency Mode &amp; TCP QuickACK Ping Booster\n• 🛑 App Standby Freeze (Restricted) &amp; Background Purge\n• 🚫 Disable Virtual RAM / RAM Plus (Anti-Stutter)\n• 🔕 Total Game DND &amp; Disable Heads-Up Popups\n• 💥 Kill Joyose &amp; Samsung GOS Throttlers"
                         android:textSize="12.5sp"
                         android:textColor="?android:attr/textColorSecondary"
                         android:lineSpacingExtra="3dp"

@@ -7,18 +7,21 @@ import android.graphics.drawable.Drawable
  */
 enum class BoostStepType {
     IDLE,
-    FSTRIM,
-    LOGCAT_PURGE,
+    FSTRIM_LOGCAT,
+    KERNEL_VM_TUNING,
     VENDOR_THROTTLER_DISABLE,
-    APP_PURGE,
+    APP_STANDBY_PURGE,
     THERMAL_OVERRIDE,
     POWER_PERFORMANCE,
+    GPU_DEVFREQ_GOVERNOR,
+    CPU_UCLAMP_SCHEDTUNE,
     SURFACEFLINGER_GRAPHICS,
+    RESOLUTION_DOWNSCALE,
     GAME_MODE_API,
     AOT_DEX_COMPILE,
-    CPU_PRIORITY_AFFINITY,
+    CPU_PRIORITY_AFFINITY_OOM,
     TOUCH_RESPONSE_BOOST,
-    NETWORK_OPTIMIZATION,
+    NETWORK_WIFI_OPTIMIZATION,
     MEMORY_TRIM,
     DND_ACTIVATE,
     COMPLETE,
@@ -34,6 +37,16 @@ enum class BoostMode {
 }
 
 /**
+ * Resolution Downscaling Presets for massive GPU render load reduction.
+ */
+enum class ResolutionDownscalePreset(val scale: Float, val displayName: String) {
+    NATIVE(1.0f, "Native (100%)"),
+    BALANCED_85(0.85f, "85% (Ultra-Smooth)"),
+    SPEED_70(0.70f, "70% (Maximum FPS / High-Load)"),
+    EXTREME_50(0.50f, "50% (Extreme Frame Boost)")
+}
+
+/**
  * Configuration options for the Game Booster optimization pipeline.
  */
 data class GameBoostConfig(
@@ -42,18 +55,26 @@ data class GameBoostConfig(
     val mode: BoostMode = BoostMode.EXTREME_BEAST,
     val targetFps: Int = 120,
     val targetRefreshRate: Float = 120.0f,
+    val downscalePreset: ResolutionDownscalePreset = ResolutionDownscalePreset.NATIVE,
     val downscaleRatio: Float? = null,
     val enableAotCompile: Boolean = true,
+    val enableSecondaryDexCompile: Boolean = true,
     val enableThermalBypass: Boolean = true,
     val enablePowerHal: Boolean = true,
     val enableGraphicsTuning: Boolean = true,
+    val enableGpuDevfreqGovernor: Boolean = true,
+    val enableCpuUclampSchedTune: Boolean = true,
     val enableCpuPinning: Boolean = true,
+    val enableOomShield: Boolean = true,
+    val enableKernelVmTuning: Boolean = true,
     val enableNetworkLock: Boolean = true,
-    val enableDnd: Boolean = true,
+    val enableWifiLowLatency: Boolean = true,
     val enableTouchBoost: Boolean = true,
+    val enableDnd: Boolean = true,
     val enableVirtualRamDisable: Boolean = true,
     val enableKillVendorThrottlers: Boolean = true,
     val enableBackgroundPurge: Boolean = true,
+    val enableAppStandbyFreeze: Boolean = true,
     val enableStorageTrim: Boolean = true
 )
 

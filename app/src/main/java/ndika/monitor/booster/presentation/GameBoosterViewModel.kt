@@ -80,6 +80,14 @@ class GameBoosterViewModel(
         }
     }
 
+    fun setResolutionPreset(preset: ndika.monitor.booster.model.ResolutionDownscalePreset) {
+        _uiState.update { state ->
+            state.copy(
+                config = state.config.copy(downscalePreset = preset)
+            )
+        }
+    }
+
     fun updateConfig(modifier: (GameBoostConfig) -> GameBoostConfig) {
         _uiState.update { state ->
             state.copy(config = modifier(state.config))

@@ -134,6 +134,12 @@ class StandaloneOverlayService : Service() {
         updateJob?.cancel()
         updateJob = serviceScope.launch {
             while (isActive) {
+                // If overlay is hidden and recording is inactive, skip tracking to save 100% CPU cycles
+                if (!isOverlayVisible && !SessionRecorder.isRecording()) {
+                    delay(2000L)
+                    continue
+                }
+
                 // Update tracker values in background thread
                 trackers.forEach { tracker ->
                     try {

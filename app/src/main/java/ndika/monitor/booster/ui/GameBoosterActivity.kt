@@ -77,6 +77,31 @@ class GameBoosterActivity : AppCompatActivity() {
             }
         }
 
+        binding.rgResolutionPreset.setOnCheckedChangeListener { _, checkedId ->
+            when (checkedId) {
+                R.id.rbResNative -> {
+                    viewModel.setResolutionPreset(ndika.monitor.booster.model.ResolutionDownscalePreset.NATIVE)
+                    binding.tvResolutionBadge.text = "100% NATIVE"
+                    binding.tvResolutionBadge.setBackgroundColor(Color.parseColor("#2E7D32"))
+                }
+                R.id.rbRes85 -> {
+                    viewModel.setResolutionPreset(ndika.monitor.booster.model.ResolutionDownscalePreset.BALANCED_85)
+                    binding.tvResolutionBadge.text = "85% RESOLUTION"
+                    binding.tvResolutionBadge.setBackgroundColor(Color.parseColor("#1976D2"))
+                }
+                R.id.rbRes70 -> {
+                    viewModel.setResolutionPreset(ndika.monitor.booster.model.ResolutionDownscalePreset.SPEED_70)
+                    binding.tvResolutionBadge.text = "70% RESOLUTION"
+                    binding.tvResolutionBadge.setBackgroundColor(Color.parseColor("#E65100"))
+                }
+                R.id.rbRes50 -> {
+                    viewModel.setResolutionPreset(ndika.monitor.booster.model.ResolutionDownscalePreset.EXTREME_50)
+                    binding.tvResolutionBadge.text = "50% TURBO"
+                    binding.tvResolutionBadge.setBackgroundColor(Color.parseColor("#D32F2F"))
+                }
+            }
+        }
+
         binding.btnChangeGame.setOnClickListener {
             showGameSelectionDialog()
         }
