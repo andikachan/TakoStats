@@ -88,14 +88,6 @@ class GameBoosterViewModel(
         }
     }
 
-    fun setDeviceSpoofPreset(preset: ndika.monitor.booster.model.DeviceSpoofPreset) {
-        _uiState.update { state ->
-            state.copy(
-                config = state.config.copy(deviceSpoofPreset = preset)
-            )
-        }
-    }
-
     fun updateConfig(modifier: (GameBoostConfig) -> GameBoostConfig) {
         _uiState.update { state ->
             state.copy(config = modifier(state.config))

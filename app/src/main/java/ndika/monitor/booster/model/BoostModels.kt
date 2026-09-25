@@ -17,7 +17,6 @@ enum class BoostStepType {
     CPU_UCLAMP_SCHEDTUNE,
     SURFACEFLINGER_GRAPHICS,
     RESOLUTION_DOWNSCALE,
-    DEVICE_SPOOFING,
     GAME_MODE_API,
     AOT_DEX_COMPILE,
     CPU_PRIORITY_AFFINITY_OOM,
@@ -48,141 +47,6 @@ enum class ResolutionDownscalePreset(val scale: Float, val displayName: String) 
 }
 
 /**
- * Categories for Device Spoofing
- */
-enum class DeviceProfileType {
-    GAMING_FLAGSHIP, // Unlock 90/120 FPS & Ultra Graphics
-    POTATO_LEGACY,   // Potato / Low-End resolution & assets for max FPS on modern phones
-    NONE             // Default original device identity
-}
-
-/**
- * Device Model Spoofing Presets
- */
-enum class DeviceSpoofPreset(
-    val id: String,
-    val displayName: String,
-    val category: DeviceProfileType,
-    val model: String,
-    val manufacturer: String,
-    val brand: String,
-    val device: String,
-    val recommendedDownscale: Float? = null,
-    val targetFps: Int = 120,
-    val badge: String,
-    val description: String
-) {
-    NONE(
-        id = "none",
-        displayName = "Original Device (No Spoof)",
-        category = DeviceProfileType.NONE,
-        model = "",
-        manufacturer = "",
-        brand = "",
-        device = "",
-        recommendedDownscale = null,
-        targetFps = 120,
-        badge = "DEFAULT",
-        description = "Use original device model and properties."
-    ),
-
-    // Gaming Flagships (Unlock 90/120 FPS & Ultra Graphics)
-    ROG_PHONE_8_PRO(
-        id = "rog_8_pro",
-        displayName = "ASUS ROG Phone 8 Pro",
-        category = DeviceProfileType.GAMING_FLAGSHIP,
-        model = "ASUS_AI2401",
-        manufacturer = "asus",
-        brand = "asus",
-        device = "ASUS_AI2401",
-        recommendedDownscale = null,
-        targetFps = 120,
-        badge = "120 FPS UNLOCK",
-        description = "Unlocks 90/120 FPS in MLBB, PUBG, CODM & Wild Rift."
-    ),
-    REDMAGIC_9_PRO(
-        id = "redmagic_9_pro",
-        displayName = "Nubia RedMagic 9 Pro",
-        category = DeviceProfileType.GAMING_FLAGSHIP,
-        model = "NX769J",
-        manufacturer = "nubia",
-        brand = "nubia",
-        device = "NX769J",
-        recommendedDownscale = null,
-        targetFps = 144,
-        badge = "144 FPS UNLOCK",
-        description = "Unlocks 120/144 FPS & Ultra graphics modes."
-    ),
-    BLACK_SHARK_5_PRO(
-        id = "black_shark_5_pro",
-        displayName = "Xiaomi Black Shark 5 Pro",
-        category = DeviceProfileType.GAMING_FLAGSHIP,
-        model = "SHARK KTUS-H0",
-        manufacturer = "blackshark",
-        brand = "blackshark",
-        device = "ktus",
-        recommendedDownscale = null,
-        targetFps = 120,
-        badge = "GAME TURBO",
-        description = "Unlocks 120 FPS whitelist on Xiaomi/MIUI game databases."
-    ),
-    GALAXY_S24_ULTRA(
-        id = "galaxy_s24_ultra",
-        displayName = "Samsung Galaxy S24 Ultra",
-        category = DeviceProfileType.GAMING_FLAGSHIP,
-        model = "SM-S928B",
-        manufacturer = "samsung",
-        brand = "samsung",
-        device = "e3q",
-        recommendedDownscale = null,
-        targetFps = 120,
-        badge = "RAY TRACING",
-        description = "Unlocks Ray Tracing & Ultra HDR mode in supported games."
-    ),
-
-    // Potato & Legacy Phones (Low-Res Rendering for Maximum FPS on Modern Phones)
-    REDMI_4A_POTATO(
-        id = "redmi_4a_potato",
-        displayName = "Xiaomi Redmi 4A (Potato 720p)",
-        category = DeviceProfileType.POTATO_LEGACY,
-        model = "Redmi 4A",
-        manufacturer = "Xiaomi",
-        brand = "Xiaomi",
-        device = "rolex",
-        recommendedDownscale = 0.65f,
-        targetFps = 60,
-        badge = "POTATO 720P",
-        description = "Forces games to load low-poly textures & 720p render scale for ultra-smooth gameplay."
-    ),
-    GALAXY_J2_PRIME(
-        id = "galaxy_j2_prime",
-        displayName = "Samsung Galaxy J2 Prime (qHD 540p Extreme)",
-        category = DeviceProfileType.POTATO_LEGACY,
-        model = "SM-G532G",
-        manufacturer = "samsung",
-        brand = "samsung",
-        device = "grandpplte",
-        recommendedDownscale = 0.50f,
-        targetFps = 60,
-        badge = "EXTREME 540P",
-        description = "Extreme low-end render mode. Forces games to absolute minimum asset quality."
-    ),
-    POCO_M3_LEGACY(
-        id = "poco_m3_legacy",
-        displayName = "Xiaomi POCO M3 (Budget 720p)",
-        category = DeviceProfileType.POTATO_LEGACY,
-        model = "M2010J19CG",
-        manufacturer = "Xiaomi",
-        brand = "POCO",
-        device = "citrus",
-        recommendedDownscale = 0.70f,
-        targetFps = 60,
-        badge = "LIGHT 720P",
-        description = "Budget legacy profile for rock-solid frametimes on heavy titles."
-    )
-}
-
-/**
  * Configuration options for the Game Booster optimization pipeline.
  */
 data class GameBoostConfig(
@@ -192,7 +56,6 @@ data class GameBoostConfig(
     val targetFps: Int = 120,
     val targetRefreshRate: Float = 120.0f,
     val downscalePreset: ResolutionDownscalePreset = ResolutionDownscalePreset.NATIVE,
-    val deviceSpoofPreset: DeviceSpoofPreset = DeviceSpoofPreset.NONE,
     val downscaleRatio: Float? = null,
     val enableAotCompile: Boolean = true,
     val enableSecondaryDexCompile: Boolean = true,
