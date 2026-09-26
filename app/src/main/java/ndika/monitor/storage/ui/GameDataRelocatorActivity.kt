@@ -50,17 +50,19 @@ class GameDataRelocatorActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        val hadAccess = binding.cardPermissionWarning.visibility == View.GONE
         updatePermissionBanner()
-        val hasAccess = binding.cardPermissionWarning.visibility == View.GONE
-        if (!hadAccess && hasAccess) {
-            loadGamesStorageData()
-        }
+        loadGamesStorageData()
     }
 
     private fun updatePermissionBanner() {
-        val hasAccess = StoragePermissionHelper.hasAllFilesAccess(this)
-        binding.cardPermissionWarning.visibility = if (hasAccess) View.GONE else View.VISIBLE
+        val hasAllFiles = StoragePermissionHelper.hasAllFilesAccess(this)
+        val hasUsage = StoragePermissionHelper.hasUsageStatsPermission(this)
+        val hasShizukuOrRoot = StoragePermissionHelper.hasShizukuOrRootAccess()
+
+        val needsBanner = !hasAllFiles || (!hasUsage && !hasShizukuOrRoot)
+        binding.cardPermissionWarning.visibility = if (needsBanner) View.VISIBLE else View.GONE
+        binding.btnGrantPermission.visibility = if (!hasAllFiles) View.VISIBLE else View.GONE
+        binding.btnGrantUsageAccess.visibility = if (!hasUsage) View.VISIBLE else View.GONE
     }
 
     private fun setupToolbar() {
@@ -82,6 +84,10 @@ class GameDataRelocatorActivity : AppCompatActivity() {
     private fun setupListeners() {
         binding.btnGrantPermission.setOnClickListener {
             StoragePermissionHelper.requestAllFilesAccess(this)
+        }
+
+        binding.btnGrantUsageAccess.setOnClickListener {
+            StoragePermissionHelper.requestUsageStatsPermission(this)
         }
 
         binding.searchGames.setOnQueryTextListener(object : SearchView.OnQueryTextListener {

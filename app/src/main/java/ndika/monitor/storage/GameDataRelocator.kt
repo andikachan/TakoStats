@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Environment
 import android.os.Process
+import android.os.storage.StorageManager as AndroidStorageManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import ndika.monitor.booster.executor.IShizukuShellExecutor
@@ -14,6 +15,7 @@ import ndika.monitor.booster.executor.ShizukuShellExecutor
 import ndika.monitor.storage.model.GameStorageInfo
 import org.json.JSONObject
 import java.io.File
+import java.util.UUID
 
 object GameDataRelocator {
 
@@ -58,9 +60,9 @@ object GameDataRelocator {
                 val relocationRecord = relocatedMap[app.packageName]
                 val isRelocated = relocationRecord != null
 
-                // Compute folder sizes with multi-tier detection
-                var dataSize: Long
-                var obbSize: Long
+                // Multi-Tier Directory and Asset Size Detection
+                var dataSize = 0L
+                var obbSize = 0L
 
                 if (isRelocated) {
                     val destData = relocationRecord?.targetDataPath
@@ -75,7 +77,14 @@ object GameDataRelocator {
                     dataSize = shellDataSizes[app.packageName] ?: 0L
                     obbSize = shellObbSizes[app.packageName] ?: 0L
 
-                    // Fallback 1: Java File listing
+                    // Fallback 1: Package-specific shell query (tests /sdcard, /storage/emulated/0, and /data/media/0)
+                    if (dataSize <= 0L && obbSize <= 0L) {
+                        val (pData, pObb) = queryPackageStorageViaShell(app.packageName)
+                        if (pData > 0L) dataSize = pData
+                        if (pObb > 0L) obbSize = pObb
+                    }
+
+                    // Fallback 2: Direct Java File inspection
                     if (dataSize <= 0L) {
                         dataSize = getDirectorySize(dataDir)
                     }
@@ -83,20 +92,25 @@ object GameDataRelocator {
                         obbSize = getDirectorySize(obbDir)
                     }
 
-                    // Fallback 2: Single shell query if dir exists
-                    if (dataSize <= 0L && dataDir.exists()) {
-                        dataSize = queryPathSizeViaShell(dataDir.absolutePath)
-                    }
-                    if (obbSize <= 0L && obbDir.exists()) {
-                        obbSize = queryPathSizeViaShell(obbDir.absolutePath)
-                    }
-
-                    // Fallback 3: System StorageStatsManager
+                    // Fallback 3: System StorageStatsManager (API 26+)
                     if (dataSize <= 0L && obbSize <= 0L) {
                         val statsSize = getStorageStatsDataSize(context, app.packageName)
                         if (statsSize > 0L) {
                             dataSize = statsSize
                         }
+                    }
+
+                    // Fallback 4: Base APK and Split APK sizes
+                    if (dataSize <= 0L && obbSize <= 0L) {
+                        try {
+                            var apkBytes = File(app.sourceDir).length()
+                            app.splitSourceDirs?.forEach { sPath ->
+                                apkBytes += File(sPath).length()
+                            }
+                            if (apkBytes > 0L) {
+                                dataSize = apkBytes
+                            }
+                        } catch (_: Exception) {}
                     }
                 }
 
@@ -139,13 +153,35 @@ object GameDataRelocator {
         val dataMap = mutableMapOf<String, Long>()
         val obbMap = mutableMapOf<String, Long>()
         try {
-            val res = shellExecutor.executeCommand(
-                "du -sk /sdcard/Android/data/* /sdcard/Android/obb/* /storage/emulated/0/Android/data/* /storage/emulated/0/Android/obb/* 2>/dev/null",
-                timeoutMs = 5000L
-            )
+            val cmd = "du -sk /sdcard/Android/data/* /sdcard/Android/obb/* /storage/emulated/0/Android/data/* /storage/emulated/0/Android/obb/* /data/media/0/Android/data/* /data/media/0/Android/obb/* 2>/dev/null"
+            val res = shellExecutor.executeCommand(cmd, timeoutMs = 6000L)
             parseDuLines(res.stdout, dataMap, obbMap)
         } catch (_: Exception) {}
         return Pair(dataMap, obbMap)
+    }
+
+    private suspend fun queryPackageStorageViaShell(pkg: String): Pair<Long, Long> {
+        var dataSize = 0L
+        var obbSize = 0L
+        try {
+            val cmd = "du -sk /sdcard/Android/data/$pkg /storage/emulated/0/Android/data/$pkg /data/media/0/Android/data/$pkg /sdcard/Android/obb/$pkg /storage/emulated/0/Android/obb/$pkg /data/media/0/Android/obb/$pkg 2>/dev/null"
+            val res = shellExecutor.executeCommand(cmd, timeoutMs = 2500L)
+            res.stdout.lines().forEach { line ->
+                val parts = line.trim().split(Regex("\\s+"), limit = 2)
+                if (parts.size == 2) {
+                    val kb = parts[0].toLongOrNull() ?: 0L
+                    val path = parts[1]
+                    if (kb > 0L) {
+                        if (path.contains("/data/")) {
+                            if (dataSize == 0L) dataSize = kb * 1024L
+                        } else if (path.contains("/obb/")) {
+                            if (obbSize == 0L) obbSize = kb * 1024L
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        return Pair(dataSize, obbSize)
     }
 
     private fun parseDuLines(output: String, dataMap: MutableMap<String, Long>, obbMap: MutableMap<String, Long>) {
@@ -189,7 +225,8 @@ object GameDataRelocator {
                 val storageStatsManager = context.getSystemService(Context.STORAGE_STATS_SERVICE) as? StorageStatsManager
                 val packageManager = context.packageManager
                 val appInfo = packageManager.getApplicationInfo(packageName, 0)
-                val stats = storageStatsManager?.queryStatsForPackage(appInfo.storageUuid, packageName, Process.myUserHandle())
+                val uuid: UUID = appInfo.storageUuid ?: AndroidStorageManager.UUID_DEFAULT
+                val stats = storageStatsManager?.queryStatsForPackage(uuid, packageName, Process.myUserHandle())
                 if (stats != null) {
                     return stats.dataBytes
                 }
@@ -245,8 +282,8 @@ object GameDataRelocator {
 
             // 5. Mount Bind
             onProgress(92, "Mounting external directory link...")
-            val mountDataRes = shellExecutor.executeCommand("mount -o bind \"$destDataDir\" $srcDataDir 2>/dev/null; mount --bind \"$destDataDir\" $srcDataDir 2>/dev/null", timeoutMs = 3000L)
-            val mountObbRes = shellExecutor.executeCommand("mount -o bind \"$destObbDir\" $srcObbDir 2>/dev/null; mount --bind \"$destObbDir\" $srcObbDir 2>/dev/null", timeoutMs = 3000L)
+            shellExecutor.executeCommand("mount -o bind \"$destDataDir\" $srcDataDir 2>/dev/null; mount --bind \"$destDataDir\" $srcDataDir 2>/dev/null", timeoutMs = 3000L)
+            shellExecutor.executeCommand("mount -o bind \"$destObbDir\" $srcObbDir 2>/dev/null; mount --bind \"$destObbDir\" $srcObbDir 2>/dev/null", timeoutMs = 3000L)
 
             // Fallback: symlink files
             shellExecutor.executeCommand("ln -sf \"$destDataDir\"/* $srcDataDir/ 2>/dev/null", timeoutMs = 3000L)

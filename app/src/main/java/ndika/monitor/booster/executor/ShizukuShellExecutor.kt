@@ -13,6 +13,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import ndika.monitor.booster.model.ShellResult
 import rikka.shizuku.Shizuku
 import java.io.BufferedReader
+import java.io.InputStreamReader
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
 
@@ -58,16 +59,28 @@ class ShizukuShellExecutor : IShizukuShellExecutor {
     }
 
     override suspend fun executeCommand(command: String, timeoutMs: Long): ShellResult = withContext(Dispatchers.IO) {
-        if (!isShizukuAvailable()) {
-            return@withContext ShellResult.failure("Shizuku binder is not available or disconnected.")
-        }
-        if (!hasPermission()) {
-            return@withContext ShellResult.failure("Shizuku permission has not been granted by user.")
-        }
-
         val startTime = SystemClock.elapsedRealtime()
-        var process: Process? = null
 
+        // 1. Try Shizuku if available and granted
+        if (isShizukuAvailable() && hasPermission()) {
+            val shizukuRes = executeViaShizuku(command, timeoutMs, startTime)
+            if (shizukuRes.isSuccess || shizukuRes.stdout.isNotBlank()) {
+                return@withContext shizukuRes
+            }
+        }
+
+        // 2. Try Root (su)
+        val rootRes = executeViaRoot(command, timeoutMs, startTime)
+        if (rootRes.isSuccess || rootRes.stdout.isNotBlank()) {
+            return@withContext rootRes
+        }
+
+        // 3. Fallback to standard process (sh)
+        return@withContext executeViaStandardSh(command, timeoutMs, startTime)
+    }
+
+    private suspend fun executeViaShizuku(command: String, timeoutMs: Long, startTime: Long): ShellResult = withContext(Dispatchers.IO) {
+        var process: Process? = null
         try {
             val executionResult = withTimeoutOrNull(timeoutMs) {
                 coroutineScope {
@@ -78,27 +91,19 @@ class ShizukuShellExecutor : IShizukuShellExecutor {
                     val method = newProcessMethod
                         ?: return@coroutineScope ShellResult.failure("Shizuku reflection method unresolved.")
 
-                    val cmd = arrayOf("sh", "-c", command)
+                    val cmd = arrayOf("sh", "-c", "export PATH=/system/bin:/system/xbin:\$PATH; $command")
                     process = try {
                         method.invoke(null, cmd, null, null) as? Process
                     } catch (e: InvocationTargetException) {
                         val target = e.targetException
-                        if (target is SecurityException) {
-                            return@coroutineScope ShellResult.failure("Shizuku SecurityException: ${target.message}")
-                        } else if (target is DeadObjectException || target is RemoteException) {
-                            return@coroutineScope ShellResult.failure("Shizuku IPC DeadObjectException: Shizuku service was terminated.")
-                        }
                         return@coroutineScope ShellResult.failure("Process spawn error: ${target?.message ?: e.message}")
-                    } catch (e: SecurityException) {
-                        return@coroutineScope ShellResult.failure("Shizuku SecurityException: ${e.message}")
-                    } catch (e: IllegalStateException) {
-                        return@coroutineScope ShellResult.failure("Shizuku IllegalStateException: ${e.message}")
+                    } catch (e: Exception) {
+                        return@coroutineScope ShellResult.failure("Shizuku error: ${e.message}")
                     }
 
                     val proc = process
                         ?: return@coroutineScope ShellResult.failure("Failed to instantiate Shizuku process.")
 
-                    // Asynchronously read stdout and stderr to prevent pipe deadlock
                     val stdoutDeferred = async(Dispatchers.IO) {
                         proc.inputStream.bufferedReader().use(BufferedReader::readText)
                     }
@@ -124,23 +129,99 @@ class ShizukuShellExecutor : IShizukuShellExecutor {
 
             if (executionResult == null) {
                 process?.destroyForcibly()
-                val duration = SystemClock.elapsedRealtime() - startTime
-                ShellResult.failure("Execution timed out after ${timeoutMs}ms for: $command", exitCode = -1, durationMs = duration)
+                ShellResult.failure("Shizuku timed out after ${timeoutMs}ms", exitCode = -1)
             } else {
                 executionResult
             }
-        } catch (e: TimeoutCancellationException) {
-            process?.destroyForcibly()
-            val duration = SystemClock.elapsedRealtime() - startTime
-            ShellResult.failure("Command timed out: ${e.message}", exitCode = -1, durationMs = duration)
-        } catch (e: SecurityException) {
-            process?.destroyForcibly()
-            val duration = SystemClock.elapsedRealtime() - startTime
-            ShellResult.failure("Shizuku SecurityException: ${e.message}", exitCode = -1, durationMs = duration)
         } catch (e: Exception) {
             process?.destroyForcibly()
-            val duration = SystemClock.elapsedRealtime() - startTime
-            ShellResult.failure("Shell execution failed: ${e.message}", exitCode = -1, durationMs = duration)
+            ShellResult.failure("Shizuku execution failed: ${e.message}", exitCode = -1)
+        }
+    }
+
+    private suspend fun executeViaRoot(command: String, timeoutMs: Long, startTime: Long): ShellResult = withContext(Dispatchers.IO) {
+        var process: Process? = null
+        try {
+            val executionResult = withTimeoutOrNull(timeoutMs) {
+                coroutineScope {
+                    process = Runtime.getRuntime().exec(arrayOf("su", "-c", "export PATH=/system/bin:/system/xbin:\$PATH; $command"))
+                    val proc = process ?: return@coroutineScope ShellResult.failure("Failed to spawn su process.")
+
+                    val stdoutDeferred = async(Dispatchers.IO) {
+                        proc.inputStream.bufferedReader().use(BufferedReader::readText)
+                    }
+                    val stderrDeferred = async(Dispatchers.IO) {
+                        proc.errorStream.bufferedReader().use(BufferedReader::readText)
+                    }
+
+                    val exitCode = proc.waitFor()
+                    val stdoutText = stdoutDeferred.await().trim()
+                    val stderrText = stderrDeferred.await().trim()
+                    val duration = SystemClock.elapsedRealtime() - startTime
+
+                    ShellResult(
+                        isSuccess = (exitCode == 0),
+                        exitCode = exitCode,
+                        stdout = stdoutText,
+                        stderr = stderrText,
+                        executionDurationMs = duration,
+                        errorMessage = if (exitCode != 0 && stderrText.isNotBlank()) stderrText else null
+                    )
+                }
+            }
+
+            if (executionResult == null) {
+                process?.destroyForcibly()
+                ShellResult.failure("su timed out after ${timeoutMs}ms", exitCode = -1)
+            } else {
+                executionResult
+            }
+        } catch (e: Exception) {
+            process?.destroyForcibly()
+            ShellResult.failure("su execution failed: ${e.message}", exitCode = -1)
+        }
+    }
+
+    private suspend fun executeViaStandardSh(command: String, timeoutMs: Long, startTime: Long): ShellResult = withContext(Dispatchers.IO) {
+        var process: Process? = null
+        try {
+            val executionResult = withTimeoutOrNull(timeoutMs) {
+                coroutineScope {
+                    process = Runtime.getRuntime().exec(arrayOf("sh", "-c", "export PATH=/system/bin:/system/xbin:\$PATH; $command"))
+                    val proc = process ?: return@coroutineScope ShellResult.failure("Failed to spawn sh process.")
+
+                    val stdoutDeferred = async(Dispatchers.IO) {
+                        proc.inputStream.bufferedReader().use(BufferedReader::readText)
+                    }
+                    val stderrDeferred = async(Dispatchers.IO) {
+                        proc.errorStream.bufferedReader().use(BufferedReader::readText)
+                    }
+
+                    val exitCode = proc.waitFor()
+                    val stdoutText = stdoutDeferred.await().trim()
+                    val stderrText = stderrDeferred.await().trim()
+                    val duration = SystemClock.elapsedRealtime() - startTime
+
+                    ShellResult(
+                        isSuccess = (exitCode == 0),
+                        exitCode = exitCode,
+                        stdout = stdoutText,
+                        stderr = stderrText,
+                        executionDurationMs = duration,
+                        errorMessage = if (exitCode != 0 && stderrText.isNotBlank()) stderrText else null
+                    )
+                }
+            }
+
+            if (executionResult == null) {
+                process?.destroyForcibly()
+                ShellResult.failure("sh timed out after ${timeoutMs}ms", exitCode = -1)
+            } else {
+                executionResult
+            }
+        } catch (e: Exception) {
+            process?.destroyForcibly()
+            ShellResult.failure("sh execution failed: ${e.message}", exitCode = -1)
         }
     }
 }

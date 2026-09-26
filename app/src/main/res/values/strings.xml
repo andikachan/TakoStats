@@ -143,4 +143,7 @@
     <string name="all_files_permission_title">All Files Access Permission Required</string>
     <string name="all_files_permission_desc">Grant All Files Access permission so TakoStats can accurately read game data/OBB folder sizes and transfer them to external storage without restrictions.</string>
     <string name="grant_all_files_access">Grant All Files Access</string>
+    <string name="usage_access_permission_title">Usage Access Permission</string>
+    <string name="usage_access_permission_desc">Allow Usage Access so Android system can report accurate game storage and app data usage.</string>
+    <string name="grant_usage_access">Grant Usage Access</string>
 </resources>

@@ -143,4 +143,7 @@
     <string name="all_files_permission_title">Perizinan Akses Semua File Diperlukan</string>
     <string name="all_files_permission_desc">Berikan izin Akses Semua File agar TakoStats dapat membaca ukuran folder data game/OBB secara akurat dan memindahkannya ke memori eksternal tanpa batasan sistem.</string>
     <string name="grant_all_files_access">Izinkan Akses Semua File</string>
+    <string name="usage_access_permission_title">Perizinan Akses Penggunaan</string>
+    <string name="usage_access_permission_desc">Izinkan Akses Penggunaan agar sistem Android dapat melaporkan statistik data game dan pemakaian memori secara akurat.</string>
+    <string name="grant_usage_access">Izinkan Akses Penggunaan</string>
 </resources>
