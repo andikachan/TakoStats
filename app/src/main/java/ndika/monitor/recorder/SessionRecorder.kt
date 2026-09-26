@@ -169,6 +169,13 @@ object SessionRecorder {
             val id = db.insertRecord(record)
             record.id = id
 
+            // Auto-export to external storage (SD Card / Flash Drive / Custom folder)
+            if (ndika.monitor.storage.StorageManager.isAutoExportToExternal(context)) {
+                try {
+                    ExportHelper.exportRecordToZip(context, record)
+                } catch (_: Exception) {}
+            }
+
             frameTimesList.clear()
             telemetrySamplesList.clear()
             return record

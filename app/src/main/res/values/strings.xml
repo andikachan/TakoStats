@@ -121,4 +121,20 @@
 
     <string name="game_booster">Game Booster Engine</string>
     <string name="game_booster_summary">Extreme performance optimizations, thermal bypass, AOT Dex compile, and core pinning</string>
+
+    <string name="storage_data_location">Storage and Data Location</string>
+    <string name="storage_location_title">Data Storage Location</string>
+    <string name="storage_location_summary">Select Internal Storage, MicroSD Card, USB Flash Drive, or Custom Folder</string>
+    <string name="migrate_data_title">Migrate Data to Selected Storage</string>
+    <string name="migrate_data_summary">Move benchmark database and export files to free up internal phone storage</string>
+    <string name="auto_export_title">Auto-Export to Selected Storage</string>
+    <string name="auto_export_summary">Automatically save benchmark recordings to the active storage directory</string>
+    <string name="clean_cache_title">Clear Temporary Cache</string>
+    <string name="clean_cache_summary">Purge temporary export caches and scratch logs</string>
+    <string name="select_storage_dialog_title">Select Storage Location</string>
+    <string name="choose_custom_folder">Select Custom Folder (File Manager)...</string>
+    <string name="storage_migration_success">Data migrated successfully</string>
+    <string name="storage_migration_failed">Data migration failed</string>
+    <string name="storage_cleaned">Freed %s of temporary space</string>
+    <string name="migrating_data_progress">Moving data to target storage...</string>
 </resources>

@@ -121,4 +121,20 @@
 
     <string name="game_booster">Game Booster Engine</string>
     <string name="game_booster_summary">Optimasi performa ekstrim, bypass thermal throttling, kompilasi AOT Dex, dan CPU pinning</string>
+
+    <string name="storage_data_location">Penyimpanan dan Lokasi Data</string>
+    <string name="storage_location_title">Lokasi Penyimpanan Data</string>
+    <string name="storage_location_summary">Pilih Penyimpanan Internal, Kartu SD, Flashdisk OTG, atau Folder Kustom</string>
+    <string name="migrate_data_title">Pindahkan Data ke Penyimpanan Terpilih</string>
+    <string name="migrate_data_summary">Pindahkan database dan file rekaman untuk melegakan memori internal HP</string>
+    <string name="auto_export_title">Ekspor Otomatis ke Penyimpanan Aktif</string>
+    <string name="auto_export_summary">Otomatis simpan file rekaman benchmark langsung ke direktori penyimpanan aktif</string>
+    <string name="clean_cache_title">Bersihkan Cache dan File Sementara</string>
+    <string name="clean_cache_summary">Hapus file cache ekspor sementara dan log diagnostik</string>
+    <string name="select_storage_dialog_title">Pilih Lokasi Penyimpanan</string>
+    <string name="choose_custom_folder">Pilih Folder Kustom (File Manager)...</string>
+    <string name="storage_migration_success">Migrasi data berhasil diselesaikan</string>
+    <string name="storage_migration_failed">Migrasi data gagal</string>
+    <string name="storage_cleaned">Berhasil membersihkan %s ruang penyimpanan</string>
+    <string name="migrating_data_progress">Sedang memindahkan data ke lokasi penyimpanan baru...</string>
 </resources>
