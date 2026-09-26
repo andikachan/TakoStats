@@ -7,6 +7,7 @@ import ndika.monitor.data.BenchmarkDatabaseHelper
 import ndika.monitor.data.SessionRecord
 import ndika.monitor.data.TelemetrySample
 import ndika.monitor.model.PerformanceMetrics
+import ndika.monitor.util.ExportHelper
 import org.json.JSONArray
 import java.util.Collections
 import kotlin.math.max
