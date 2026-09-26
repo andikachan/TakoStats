@@ -254,17 +254,28 @@ object GameDataRelocator {
             val destDataDir = "$targetRoot/GameData/$gamePkg/data"
             val destObbDir = "$targetRoot/GameData/$gamePkg/obb"
 
-            onProgress(15, "Creating destination folders on ${targetVolume.name}...")
-            shellExecutor.executeCommand("mkdir -p \"$destDataDir\"", timeoutMs = 3000L)
-            shellExecutor.executeCommand("mkdir -p \"$destObbDir\"", timeoutMs = 3000L)
+            onProgress(15, "Creating destination directory on ${targetVolume.name}...")
+            shellExecutor.executeCommand("mkdir -p \"$destDataDir\" \"$destObbDir\"", timeoutMs = 3000L)
 
-            // 1. Copy Data
-            onProgress(30, "Copying game data to ${targetVolume.name}...")
-            shellExecutor.executeCommand("cp -a -p -f $srcDataDir/. \"$destDataDir/\" 2>/dev/null", timeoutMs = 180000L)
+            // 1. Direct Move Data
+            onProgress(30, "Directly moving game data to ${targetVolume.name}...")
+            val mvDataRes = shellExecutor.executeCommand(
+                "mv -f $srcDataDir/* \"$destDataDir/\" 2>/dev/null || mv -f $srcDataDir/. \"$destDataDir/\" 2>/dev/null",
+                timeoutMs = 180000L
+            )
+            if (!mvDataRes.isSuccess) {
+                shellExecutor.executeCommand("cp -a -p -f $srcDataDir/. \"$destDataDir/\" 2>/dev/null && rm -rf $srcDataDir/* 2>/dev/null", timeoutMs = 180000L)
+            }
 
-            // 2. Copy OBB
-            onProgress(60, "Copying OBB assets to ${targetVolume.name}...")
-            shellExecutor.executeCommand("cp -a -p -f $srcObbDir/. \"$destObbDir/\" 2>/dev/null", timeoutMs = 180000L)
+            // 2. Direct Move OBB
+            onProgress(60, "Directly moving OBB assets to ${targetVolume.name}...")
+            val mvObbRes = shellExecutor.executeCommand(
+                "mv -f $srcObbDir/* \"$destObbDir/\" 2>/dev/null || mv -f $srcObbDir/. \"$destObbDir/\" 2>/dev/null",
+                timeoutMs = 180000L
+            )
+            if (!mvObbRes.isSuccess) {
+                shellExecutor.executeCommand("cp -a -p -f $srcObbDir/. \"$destObbDir/\" 2>/dev/null && rm -rf $srcObbDir/* 2>/dev/null", timeoutMs = 180000L)
+            }
 
             // 3. Verify destination
             onProgress(75, "Verifying relocated files...")
@@ -275,19 +286,18 @@ object GameDataRelocator {
                 totalFreedBytes = getDirectorySize(destDataFile) + getDirectorySize(destObbFile)
             }
 
-            // 4. Free internal storage
-            onProgress(85, "Freeing internal storage...")
-            shellExecutor.executeCommand("rm -rf $srcDataDir/* 2>/dev/null", timeoutMs = 30000L)
-            shellExecutor.executeCommand("rm -rf $srcObbDir/* 2>/dev/null", timeoutMs = 30000L)
+            // 4. Ensure source mount directory exists
+            onProgress(85, "Creating empty mount points in internal storage...")
+            shellExecutor.executeCommand("mkdir -p $srcDataDir $srcObbDir 2>/dev/null", timeoutMs = 3000L)
 
-            // 5. Mount Bind
+            // 5. Mount Bind & Symlink
             onProgress(92, "Mounting external directory link...")
             shellExecutor.executeCommand("mount -o bind \"$destDataDir\" $srcDataDir 2>/dev/null; mount --bind \"$destDataDir\" $srcDataDir 2>/dev/null", timeoutMs = 3000L)
             shellExecutor.executeCommand("mount -o bind \"$destObbDir\" $srcObbDir 2>/dev/null; mount --bind \"$destObbDir\" $srcObbDir 2>/dev/null", timeoutMs = 3000L)
 
-            // Fallback: symlink files
-            shellExecutor.executeCommand("ln -sf \"$destDataDir\"/* $srcDataDir/ 2>/dev/null", timeoutMs = 3000L)
-            shellExecutor.executeCommand("ln -sf \"$destObbDir\"/* $srcObbDir/ 2>/dev/null", timeoutMs = 3000L)
+            // Fallback: symlinks
+            shellExecutor.executeCommand("ln -sfn \"$destDataDir\" $srcDataDir 2>/dev/null || ln -sf \"$destDataDir\"/* $srcDataDir/ 2>/dev/null", timeoutMs = 3000L)
+            shellExecutor.executeCommand("ln -sfn \"$destObbDir\" $srcObbDir 2>/dev/null || ln -sf \"$destObbDir\"/* $srcObbDir/ 2>/dev/null", timeoutMs = 3000L)
 
             // 6. Save Relocation Record
             saveRelocationRecord(
@@ -299,9 +309,9 @@ object GameDataRelocator {
                 targetObbPath = destObbDir
             )
 
-            onProgress(100, "Game data successfully relocated to ${targetVolume.name}!")
+            onProgress(100, "Game data successfully moved to ${targetVolume.name}!")
             val freedStr = StorageManager.formatFileSize(totalFreedBytes)
-            Result.success("Successfully moved $gamePkg ($freedStr) to ${targetVolume.name}. Internal memory is now free.")
+            Result.success("Successfully moved $gamePkg ($freedStr) directly to ${targetVolume.name}. Internal memory is now free.")
         } catch (e: Exception) {
             e.printStackTrace()
             Result.failure(e)
@@ -325,24 +335,35 @@ object GameDataRelocator {
 
             onProgress(25, "Unmounting external directory link...")
             shellExecutor.executeCommand("umount -l $srcDataDir 2>/dev/null; umount -l $srcObbDir 2>/dev/null", timeoutMs = 3000L)
+            shellExecutor.executeCommand("mkdir -p $srcDataDir $srcObbDir 2>/dev/null", timeoutMs = 3000L)
 
-            onProgress(50, "Moving game data back to internal storage...")
+            onProgress(50, "Directly moving game data back to internal storage...")
             if (!record.targetDataPath.isNullOrBlank()) {
-                shellExecutor.executeCommand("mkdir -p $srcDataDir 2>/dev/null", timeoutMs = 3000L)
-                shellExecutor.executeCommand("cp -a -p -f \"${record.targetDataPath}/.\" $srcDataDir/ 2>/dev/null", timeoutMs = 180000L)
-                shellExecutor.executeCommand("rm -rf \"${record.targetDataPath}\" 2>/dev/null", timeoutMs = 30000L)
+                val mvDataRes = shellExecutor.executeCommand(
+                    "mv -f \"${record.targetDataPath}\"/* $srcDataDir/ 2>/dev/null || mv -f \"${record.targetDataPath}\"/. $srcDataDir/ 2>/dev/null",
+                    timeoutMs = 180000L
+                )
+                if (!mvDataRes.isSuccess) {
+                    shellExecutor.executeCommand("cp -a -p -f \"${record.targetDataPath}/.\" $srcDataDir/ 2>/dev/null && rm -rf \"${record.targetDataPath}\" 2>/dev/null", timeoutMs = 180000L)
+                }
+                shellExecutor.executeCommand("rm -rf \"${record.targetDataPath}\" 2>/dev/null", timeoutMs = 10000L)
             }
 
-            onProgress(75, "Moving OBB assets back to internal storage...")
+            onProgress(75, "Directly moving OBB assets back to internal storage...")
             if (!record.targetObbPath.isNullOrBlank()) {
-                shellExecutor.executeCommand("mkdir -p $srcObbDir 2>/dev/null", timeoutMs = 3000L)
-                shellExecutor.executeCommand("cp -a -p -f \"${record.targetObbPath}/.\" $srcObbDir/ 2>/dev/null", timeoutMs = 180000L)
-                shellExecutor.executeCommand("rm -rf \"${record.targetObbPath}\" 2>/dev/null", timeoutMs = 30000L)
+                val mvObbRes = shellExecutor.executeCommand(
+                    "mv -f \"${record.targetObbPath}\"/* $srcObbDir/ 2>/dev/null || mv -f \"${record.targetObbPath}\"/. $srcObbDir/ 2>/dev/null",
+                    timeoutMs = 180000L
+                )
+                if (!mvObbRes.isSuccess) {
+                    shellExecutor.executeCommand("cp -a -p -f \"${record.targetObbPath}/.\" $srcObbDir/ 2>/dev/null && rm -rf \"${record.targetObbPath}\" 2>/dev/null", timeoutMs = 180000L)
+                }
+                shellExecutor.executeCommand("rm -rf \"${record.targetObbPath}\" 2>/dev/null", timeoutMs = 10000L)
             }
 
             removeRelocationRecord(context, gamePkg)
             onProgress(100, "Game data successfully restored to internal storage.")
-            Result.success("Restored $gamePkg back to internal phone memory.")
+            Result.success("Restored $gamePkg directly back to internal phone memory.")
         } catch (e: Exception) {
             e.printStackTrace()
             Result.failure(e)
