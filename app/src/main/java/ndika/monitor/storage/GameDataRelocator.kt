@@ -290,36 +290,51 @@ object GameDataRelocator {
 
             // 1. Direct Move System Data (/data/data/$pkg)
             onProgress(25, "Directly moving internal system /data/data to ${targetVolume.name}...")
-            val mvSysRes = shellExecutor.executeCommand(
-                "mv -f \"$srcSysDir\"/* \"$destSysDir/\" 2>/dev/null || mv -f \"$srcUser0Dir\"/* \"$destSysDir/\" 2>/dev/null",
-                timeoutMs = 180000L
-            )
-            if (!mvSysRes.isSuccess) {
-                shellExecutor.executeCommand(
-                    "cp -a -p -f \"$srcSysDir/.\" \"$destSysDir/\" 2>/dev/null && rm -rf \"$srcSysDir\"/* 2>/dev/null || cp -a -p -f \"$srcUser0Dir/.\" \"$destSysDir/\" 2>/dev/null && rm -rf \"$srcUser0Dir\"/* 2>/dev/null",
-                    timeoutMs = 180000L
-                )
-            }
+            val copySysCmd = """
+                mkdir -p "$destSysDir" 2>/dev/null
+                if [ -d "$srcSysDir" ] && [ "$$(ls -A "$srcSysDir" 2>/dev/null)" ]; then
+                    cp -rf "$srcSysDir/." "$destSysDir/" 2>/dev/null || cp -a "$srcSysDir/." "$destSysDir/" 2>/dev/null
+                    if [ -d "$destSysDir" ] && [ "$$(ls -A "$destSysDir" 2>/dev/null)" ]; then
+                        rm -rf "$srcSysDir" 2>/dev/null
+                        mkdir -p "$srcSysDir" 2>/dev/null
+                        chmod 777 "$srcSysDir" 2>/dev/null
+                    fi
+                elif [ -d "$srcUser0Dir" ] && [ "$$(ls -A "$srcUser0Dir" 2>/dev/null)" ]; then
+                    cp -rf "$srcUser0Dir/." "$destSysDir/" 2>/dev/null || cp -a "$srcUser0Dir/." "$destSysDir/" 2>/dev/null
+                    if [ -d "$destSysDir" ] && [ "$$(ls -A "$destSysDir" 2>/dev/null)" ]; then
+                        rm -rf "$srcUser0Dir" 2>/dev/null
+                        mkdir -p "$srcUser0Dir" 2>/dev/null
+                        chmod 777 "$srcUser0Dir" 2>/dev/null
+                    fi
+                fi
+            """.trimIndent()
+            shellExecutor.executeCommand(copySysCmd, timeoutMs = 180000L)
 
             // 2. Direct Move Android Data
             onProgress(50, "Directly moving game data to ${targetVolume.name}...")
-            val mvDataRes = shellExecutor.executeCommand(
-                "mv -f \"$srcDataDir\"/* \"$destDataDir/\" 2>/dev/null || mv -f \"/data/media/0/Android/data/$gamePkg\"/* \"$destDataDir/\" 2>/dev/null",
-                timeoutMs = 180000L
-            )
-            if (!mvDataRes.isSuccess) {
-                shellExecutor.executeCommand("cp -a -p -f \"$srcDataDir/.\" \"$destDataDir/\" 2>/dev/null && rm -rf \"$srcDataDir\"/* 2>/dev/null", timeoutMs = 180000L)
-            }
+            val copyDataCmd = """
+                mkdir -p "$destDataDir" 2>/dev/null
+                cp -rf "$srcDataDir/." "$destDataDir/" 2>/dev/null || cp -rf "/data/media/0/Android/data/$gamePkg/." "$destDataDir/" 2>/dev/null || cp -a "$srcDataDir/." "$destDataDir/" 2>/dev/null
+                if [ -d "$destDataDir" ] && [ "$$(ls -A "$destDataDir" 2>/dev/null)" ]; then
+                    rm -rf "$srcDataDir" 2>/dev/null
+                    rm -rf "/data/media/0/Android/data/$gamePkg" 2>/dev/null
+                    mkdir -p "$srcDataDir" 2>/dev/null
+                fi
+            """.trimIndent()
+            shellExecutor.executeCommand(copyDataCmd, timeoutMs = 180000L)
 
             // 3. Direct Move Android OBB
             onProgress(70, "Directly moving OBB assets to ${targetVolume.name}...")
-            val mvObbRes = shellExecutor.executeCommand(
-                "mv -f \"$srcObbDir\"/* \"$destObbDir/\" 2>/dev/null || mv -f \"/data/media/0/Android/obb/$gamePkg\"/* \"$destObbDir/\" 2>/dev/null",
-                timeoutMs = 180000L
-            )
-            if (!mvObbRes.isSuccess) {
-                shellExecutor.executeCommand("cp -a -p -f \"$srcObbDir/.\" \"$destObbDir/\" 2>/dev/null && rm -rf \"$srcObbDir\"/* 2>/dev/null", timeoutMs = 180000L)
-            }
+            val copyObbCmd = """
+                mkdir -p "$destObbDir" 2>/dev/null
+                cp -rf "$srcObbDir/." "$destObbDir/" 2>/dev/null || cp -rf "/data/media/0/Android/obb/$gamePkg/." "$destObbDir/" 2>/dev/null || cp -a "$srcObbDir/." "$destObbDir/" 2>/dev/null
+                if [ -d "$destObbDir" ] && [ "$$(ls -A "$destObbDir" 2>/dev/null)" ]; then
+                    rm -rf "$srcObbDir" 2>/dev/null
+                    rm -rf "/data/media/0/Android/obb/$gamePkg" 2>/dev/null
+                    mkdir -p "$srcObbDir" 2>/dev/null
+                fi
+            """.trimIndent()
+            shellExecutor.executeCommand(copyObbCmd, timeoutMs = 180000L)
 
             // 4. Verify destination files & calculate total freed size
             onProgress(80, "Verifying relocated files...")
@@ -421,41 +436,42 @@ object GameDataRelocator {
             // Restore System Data
             if (!record.targetSystemDataPath.isNullOrBlank()) {
                 onProgress(40, "Directly moving internal system /data/data back...")
-                val mvSysRes = shellExecutor.executeCommand(
-                    "mv -f \"${record.targetSystemDataPath}\"/* \"$srcSysDir/\" 2>/dev/null || mv -f \"${record.targetSystemDataPath}\"/. \"$srcSysDir/\" 2>/dev/null",
-                    timeoutMs = 180000L
-                )
-                if (!mvSysRes.isSuccess) {
-                    shellExecutor.executeCommand("cp -a -p -f \"${record.targetSystemDataPath}/.\" \"$srcSysDir/\" 2>/dev/null && rm -rf \"${record.targetSystemDataPath}\" 2>/dev/null", timeoutMs = 180000L)
-                }
-                shellExecutor.executeCommand("rm -rf \"${record.targetSystemDataPath}\" 2>/dev/null", timeoutMs = 10000L)
-                shellExecutor.executeCommand("restorecon -R \"$srcSysDir\" \"$srcUser0Dir\" 2>/dev/null; chmod -R 775 \"$srcSysDir\" 2>/dev/null", timeoutMs = 3000L)
+                val restoreSysCmd = """
+                    mkdir -p "$srcSysDir" "$srcUser0Dir" 2>/dev/null
+                    cp -rf "${record.targetSystemDataPath}/." "$srcSysDir/" 2>/dev/null || cp -a "${record.targetSystemDataPath}/." "$srcSysDir/" 2>/dev/null
+                    if [ -d "$srcSysDir" ] && [ "$$(ls -A "$srcSysDir" 2>/dev/null)" ]; then
+                        rm -rf "${record.targetSystemDataPath}" 2>/dev/null
+                        restorecon -R "$srcSysDir" "$srcUser0Dir" 2>/dev/null
+                        chmod -R 775 "$srcSysDir" 2>/dev/null
+                    fi
+                """.trimIndent()
+                shellExecutor.executeCommand(restoreSysCmd, timeoutMs = 180000L)
             }
 
             // Restore Android Data
             onProgress(60, "Directly moving game data back to internal storage...")
             if (!record.targetDataPath.isNullOrBlank()) {
-                val mvDataRes = shellExecutor.executeCommand(
-                    "mv -f \"${record.targetDataPath}\"/* \"$srcDataDir/\" 2>/dev/null || mv -f \"${record.targetDataPath}\"/. \"$srcDataDir/\" 2>/dev/null",
-                    timeoutMs = 180000L
-                )
-                if (!mvDataRes.isSuccess) {
-                    shellExecutor.executeCommand("cp -a -p -f \"${record.targetDataPath}/.\" \"$srcDataDir/\" 2>/dev/null && rm -rf \"${record.targetDataPath}\" 2>/dev/null", timeoutMs = 180000L)
-                }
-                shellExecutor.executeCommand("rm -rf \"${record.targetDataPath}\" 2>/dev/null", timeoutMs = 10000L)
+                val restoreDataCmd = """
+                    mkdir -p "$srcDataDir" 2>/dev/null
+                    cp -rf "${record.targetDataPath}/." "$srcDataDir/" 2>/dev/null || cp -a "${record.targetDataPath}/." "$srcDataDir/" 2>/dev/null
+                    if [ -d "$srcDataDir" ] && [ "$$(ls -A "$srcDataDir" 2>/dev/null)" ]; then
+                        rm -rf "${record.targetDataPath}" 2>/dev/null
+                    fi
+                """.trimIndent()
+                shellExecutor.executeCommand(restoreDataCmd, timeoutMs = 180000L)
             }
 
             // Restore Android OBB
             onProgress(80, "Directly moving OBB assets back to internal storage...")
             if (!record.targetObbPath.isNullOrBlank()) {
-                val mvObbRes = shellExecutor.executeCommand(
-                    "mv -f \"${record.targetObbPath}\"/* \"$srcObbDir/\" 2>/dev/null || mv -f \"${record.targetObbPath}\"/. \"$srcObbDir/\" 2>/dev/null",
-                    timeoutMs = 180000L
-                )
-                if (!mvObbRes.isSuccess) {
-                    shellExecutor.executeCommand("cp -a -p -f \"${record.targetObbPath}/.\" \"$srcObbDir/\" 2>/dev/null && rm -rf \"${record.targetObbPath}\" 2>/dev/null", timeoutMs = 180000L)
-                }
-                shellExecutor.executeCommand("rm -rf \"${record.targetObbPath}\" 2>/dev/null", timeoutMs = 10000L)
+                val restoreObbCmd = """
+                    mkdir -p "$srcObbDir" 2>/dev/null
+                    cp -rf "${record.targetObbPath}/." "$srcObbDir/" 2>/dev/null || cp -a "${record.targetObbPath}/." "$srcObbDir/" 2>/dev/null
+                    if [ -d "$srcObbDir" ] && [ "$$(ls -A "$srcObbDir" 2>/dev/null)" ]; then
+                        rm -rf "${record.targetObbPath}" 2>/dev/null
+                    fi
+                """.trimIndent()
+                shellExecutor.executeCommand(restoreObbCmd, timeoutMs = 180000L)
             }
 
             removeRelocationRecord(context, gamePkg)

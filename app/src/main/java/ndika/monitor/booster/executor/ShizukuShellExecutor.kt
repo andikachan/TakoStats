@@ -60,8 +60,22 @@ class ShizukuShellExecutor : IShizukuShellExecutor {
 
     override suspend fun executeCommand(command: String, timeoutMs: Long): ShellResult = withContext(Dispatchers.IO) {
         val startTime = SystemClock.elapsedRealtime()
+        val isRootRequired = command.contains("/data/data") ||
+                command.contains("/data/user/0") ||
+                command.contains("mount") ||
+                command.contains("umount") ||
+                command.contains("nsenter") ||
+                command.contains("su -mm")
 
-        // 1. Try Shizuku if available and granted
+        // 1. If Root is specifically required for system data/mounts, try Root first
+        if (isRootRequired) {
+            val rootRes = executeViaRoot(command, timeoutMs, startTime)
+            if (rootRes.isSuccess || rootRes.stdout.isNotBlank()) {
+                return@withContext rootRes
+            }
+        }
+
+        // 2. Try Shizuku if available and granted
         if (isShizukuAvailable() && hasPermission()) {
             val shizukuRes = executeViaShizuku(command, timeoutMs, startTime)
             if (shizukuRes.isSuccess || shizukuRes.stdout.isNotBlank()) {
@@ -69,13 +83,15 @@ class ShizukuShellExecutor : IShizukuShellExecutor {
             }
         }
 
-        // 2. Try Root (su)
-        val rootRes = executeViaRoot(command, timeoutMs, startTime)
-        if (rootRes.isSuccess || rootRes.stdout.isNotBlank()) {
-            return@withContext rootRes
+        // 3. Try Root (su) if not tried yet
+        if (!isRootRequired) {
+            val rootRes = executeViaRoot(command, timeoutMs, startTime)
+            if (rootRes.isSuccess || rootRes.stdout.isNotBlank()) {
+                return@withContext rootRes
+            }
         }
 
-        // 3. Fallback to standard process (sh)
+        // 4. Fallback to standard process (sh)
         return@withContext executeViaStandardSh(command, timeoutMs, startTime)
     }
 
