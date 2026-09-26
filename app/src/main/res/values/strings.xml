@@ -137,4 +137,7 @@
     <string name="storage_migration_failed">Data migration failed</string>
     <string name="storage_cleaned">Freed %s of temporary space</string>
     <string name="migrating_data_progress">Moving data to target storage...</string>
+
+    <string name="game_relocator_title">Game Data and OBB Relocator</string>
+    <string name="game_relocator_summary">Move heavy game data (10GB+) to SD Card or USB OTG and keep internal storage free</string>
 </resources>

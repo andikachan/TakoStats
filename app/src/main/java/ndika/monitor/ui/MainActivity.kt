@@ -115,6 +115,11 @@ class MainActivity : AppCompatActivity() {
             ndika.monitor.booster.ui.GameBoosterActivity.start(this)
         }
 
+        // Game Data and OBB Relocator Card
+        binding.cardGameRelocator.setOnClickListener {
+            ndika.monitor.storage.ui.GameDataRelocatorActivity.start(this)
+        }
+
         // Benchmark Records Card
         binding.cardRecords.setOnClickListener {
             startActivity(Intent(this, RecordListActivity::class.java))

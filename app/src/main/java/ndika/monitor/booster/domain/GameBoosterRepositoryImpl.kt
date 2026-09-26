@@ -280,6 +280,9 @@ class GameBoosterRepositoryImpl(
             // Auto-unlock graphics & hardware cache purge
             val unlockLogs = autoUnlockGameGraphics(gamePkg, targetFps)
             logSummary.addAll(unlockLogs)
+
+            // Ensure external game data & OBB mount is active if relocated
+            ndika.monitor.storage.GameDataRelocator.ensureGameMounted(context, gamePkg)
         }
 
         // -------------------------------------------------------------

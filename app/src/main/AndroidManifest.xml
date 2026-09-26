@@ -79,6 +79,13 @@
             android:label="Game Booster Engine"
             android:parentActivityName=".ui.MainActivity" />
 
+        <!-- Game Data and OBB Relocator Activity (App2SD) -->
+        <activity
+            android:name=".storage.ui.GameDataRelocatorActivity"
+            android:exported="false"
+            android:label="@string/game_relocator_title"
+            android:parentActivityName=".ui.MainActivity" />
+
         <!-- Standalone Floating Overlay Service -->
         <service
             android:name=".overlay.StandaloneOverlayService"

@@ -137,4 +137,7 @@
     <string name="storage_migration_failed">Migrasi data gagal</string>
     <string name="storage_cleaned">Berhasil membersihkan %s ruang penyimpanan</string>
     <string name="migrating_data_progress">Sedang memindahkan data ke lokasi penyimpanan baru...</string>
+
+    <string name="game_relocator_title">Pemindah Data Game dan OBB</string>
+    <string name="game_relocator_summary">Pindahkan data game (10GB+) ke Kartu SD atau Flashdisk OTG agar memori internal tetap lega</string>
 </resources>

@@ -85,7 +85,14 @@ class SettingsActivity : AppCompatActivity() {
                 true
             }
 
-            // 4. Clean Cache Preference
+            // 4. Game Data and OBB Relocator Preference
+            val relocatorPref = findPreference<Preference>("game_relocator")
+            relocatorPref?.setOnPreferenceClickListener {
+                ndika.monitor.storage.ui.GameDataRelocatorActivity.start(context)
+                true
+            }
+
+            // 5. Clean Cache Preference
             val cleanCachePref = findPreference<Preference>("clean_cache")
             cleanCachePref?.setOnPreferenceClickListener {
                 val freed = StorageManager.cleanTemporaryCaches(context)
