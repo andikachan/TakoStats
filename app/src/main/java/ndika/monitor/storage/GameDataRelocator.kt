@@ -21,6 +21,7 @@ object GameDataRelocator {
 
     private const val PREFS_NAME = "game_relocator_prefs"
     private const val KEY_RELOCATED_GAMES = "relocated_games_map"
+    private const val MANIFEST_FILE_NAME = "relocation_manifest.json"
 
     private val shellExecutor: IShizukuShellExecutor = ShizukuShellExecutor()
 
@@ -77,7 +78,7 @@ object GameDataRelocator {
                     dataSize = shellDataSizes[app.packageName] ?: 0L
                     obbSize = shellObbSizes[app.packageName] ?: 0L
 
-                    // Fallback 1: Package-specific shell query (tests /sdcard, /storage/emulated/0, and /data/media/0)
+                    // Fallback 1: Package-specific shell query
                     if (dataSize <= 0L && obbSize <= 0L) {
                         val (pData, pObb) = queryPackageStorageViaShell(app.packageName)
                         if (pData > 0L) dataSize = pData
@@ -251,8 +252,8 @@ object GameDataRelocator {
             val targetRoot = targetVolume.path?.absolutePath
                 ?: return@withContext Result.failure(Exception("Target storage path is not accessible."))
 
-            val destDataDir = "$targetRoot/GameData/$gamePkg/data"
-            val destObbDir = "$targetRoot/GameData/$gamePkg/obb"
+            val destDataDir = "$targetRoot/TakoStats/GameData/$gamePkg/data"
+            val destObbDir = "$targetRoot/TakoStats/GameData/$gamePkg/obb"
 
             onProgress(15, "Creating destination directory on ${targetVolume.name}...")
             shellExecutor.executeCommand("mkdir -p \"$destDataDir\" \"$destObbDir\"", timeoutMs = 3000L)
@@ -260,21 +261,21 @@ object GameDataRelocator {
             // 1. Direct Move Data
             onProgress(30, "Directly moving game data to ${targetVolume.name}...")
             val mvDataRes = shellExecutor.executeCommand(
-                "mv -f $srcDataDir/* \"$destDataDir/\" 2>/dev/null || mv -f $srcDataDir/. \"$destDataDir/\" 2>/dev/null",
+                "mv -f \"$srcDataDir\"/* \"$destDataDir/\" 2>/dev/null || mv -f \"/data/media/0/Android/data/$gamePkg\"/* \"$destDataDir/\" 2>/dev/null",
                 timeoutMs = 180000L
             )
             if (!mvDataRes.isSuccess) {
-                shellExecutor.executeCommand("cp -a -p -f $srcDataDir/. \"$destDataDir/\" 2>/dev/null && rm -rf $srcDataDir/* 2>/dev/null", timeoutMs = 180000L)
+                shellExecutor.executeCommand("cp -a -p -f \"$srcDataDir/.\" \"$destDataDir/\" 2>/dev/null && rm -rf \"$srcDataDir\"/* 2>/dev/null", timeoutMs = 180000L)
             }
 
             // 2. Direct Move OBB
             onProgress(60, "Directly moving OBB assets to ${targetVolume.name}...")
             val mvObbRes = shellExecutor.executeCommand(
-                "mv -f $srcObbDir/* \"$destObbDir/\" 2>/dev/null || mv -f $srcObbDir/. \"$destObbDir/\" 2>/dev/null",
+                "mv -f \"$srcObbDir\"/* \"$destObbDir/\" 2>/dev/null || mv -f \"/data/media/0/Android/obb/$gamePkg\"/* \"$destObbDir/\" 2>/dev/null",
                 timeoutMs = 180000L
             )
             if (!mvObbRes.isSuccess) {
-                shellExecutor.executeCommand("cp -a -p -f $srcObbDir/. \"$destObbDir/\" 2>/dev/null && rm -rf $srcObbDir/* 2>/dev/null", timeoutMs = 180000L)
+                shellExecutor.executeCommand("cp -a -p -f \"$srcObbDir/.\" \"$destObbDir/\" 2>/dev/null && rm -rf \"$srcObbDir\"/* 2>/dev/null", timeoutMs = 180000L)
             }
 
             // 3. Verify destination
@@ -288,18 +289,28 @@ object GameDataRelocator {
 
             // 4. Ensure source mount directory exists
             onProgress(85, "Creating empty mount points in internal storage...")
-            shellExecutor.executeCommand("mkdir -p $srcDataDir $srcObbDir 2>/dev/null", timeoutMs = 3000L)
+            shellExecutor.executeCommand("mkdir -p \"$srcDataDir\" \"$srcObbDir\" 2>/dev/null", timeoutMs = 3000L)
 
-            // 5. Mount Bind & Symlink
+            // 5. Global & Local Mount Bind
             onProgress(92, "Mounting external directory link...")
-            shellExecutor.executeCommand("mount -o bind \"$destDataDir\" $srcDataDir 2>/dev/null; mount --bind \"$destDataDir\" $srcDataDir 2>/dev/null", timeoutMs = 3000L)
-            shellExecutor.executeCommand("mount -o bind \"$destObbDir\" $srcObbDir 2>/dev/null; mount --bind \"$destObbDir\" $srcObbDir 2>/dev/null", timeoutMs = 3000L)
+            shellExecutor.executeCommand(
+                "nsenter -t 1 -m mount -o bind \"$destDataDir\" \"$srcDataDir\" 2>/dev/null || su -mm -c \"mount -o bind \\\"$destDataDir\\\" \\\"$srcDataDir\\\"\" 2>/dev/null || mount -o bind \"$destDataDir\" \"$srcDataDir\" 2>/dev/null; mount --bind \"$destDataDir\" \"$srcDataDir\" 2>/dev/null",
+                timeoutMs = 4000L
+            )
+            shellExecutor.executeCommand(
+                "nsenter -t 1 -m mount -o bind \"$destObbDir\" \"$srcObbDir\" 2>/dev/null || su -mm -c \"mount -o bind \\\"$destObbDir\\\" \\\"$srcObbDir\\\"\" 2>/dev/null || mount -o bind \"$destObbDir\" \"$srcObbDir\" 2>/dev/null; mount --bind \"$destObbDir\" \"$srcObbDir\" 2>/dev/null",
+                timeoutMs = 4000L
+            )
 
-            // Fallback: symlinks
-            shellExecutor.executeCommand("ln -sfn \"$destDataDir\" $srcDataDir 2>/dev/null || ln -sf \"$destDataDir\"/* $srcDataDir/ 2>/dev/null", timeoutMs = 3000L)
-            shellExecutor.executeCommand("ln -sfn \"$destObbDir\" $srcObbDir 2>/dev/null || ln -sf \"$destObbDir\"/* $srcObbDir/ 2>/dev/null", timeoutMs = 3000L)
+            // Symlink fallbacks
+            shellExecutor.executeCommand("ln -sfn \"$destDataDir\" \"$srcDataDir\" 2>/dev/null; ln -sf \"$destDataDir\"/* \"$srcDataDir/\" 2>/dev/null", timeoutMs = 3000L)
+            shellExecutor.executeCommand("ln -sfn \"$destObbDir\" \"$srcObbDir\" 2>/dev/null; ln -sf \"$destObbDir\"/* \"$srcObbDir/\" 2>/dev/null", timeoutMs = 3000L)
 
-            // 6. Save Relocation Record
+            // Notify MediaScanner
+            shellExecutor.executeCommand("am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d \"file://$srcDataDir\" 2>/dev/null", timeoutMs = 2000L)
+            shellExecutor.executeCommand("am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d \"file://$destDataDir\" 2>/dev/null", timeoutMs = 2000L)
+
+            // 6. Save Persistent Relocation Record (SharedPreferences + External Storage Manifest)
             saveRelocationRecord(
                 context = context,
                 packageName = gamePkg,
@@ -334,17 +345,24 @@ object GameDataRelocator {
             val srcObbDir = "/sdcard/Android/obb/$gamePkg"
 
             onProgress(25, "Unmounting external directory link...")
-            shellExecutor.executeCommand("umount -l $srcDataDir 2>/dev/null; umount -l $srcObbDir 2>/dev/null", timeoutMs = 3000L)
-            shellExecutor.executeCommand("mkdir -p $srcDataDir $srcObbDir 2>/dev/null", timeoutMs = 3000L)
+            shellExecutor.executeCommand(
+                "nsenter -t 1 -m umount -l \"$srcDataDir\" 2>/dev/null || su -mm -c \"umount -l \\\"$srcDataDir\\\"\" 2>/dev/null || umount -l \"$srcDataDir\" 2>/dev/null",
+                timeoutMs = 3000L
+            )
+            shellExecutor.executeCommand(
+                "nsenter -t 1 -m umount -l \"$srcObbDir\" 2>/dev/null || su -mm -c \"umount -l \\\"$srcObbDir\\\"\" 2>/dev/null || umount -l \"$srcObbDir\" 2>/dev/null",
+                timeoutMs = 3000L
+            )
+            shellExecutor.executeCommand("mkdir -p \"$srcDataDir\" \"$srcObbDir\" 2>/dev/null", timeoutMs = 3000L)
 
             onProgress(50, "Directly moving game data back to internal storage...")
             if (!record.targetDataPath.isNullOrBlank()) {
                 val mvDataRes = shellExecutor.executeCommand(
-                    "mv -f \"${record.targetDataPath}\"/* $srcDataDir/ 2>/dev/null || mv -f \"${record.targetDataPath}\"/. $srcDataDir/ 2>/dev/null",
+                    "mv -f \"${record.targetDataPath}\"/* \"$srcDataDir/\" 2>/dev/null || mv -f \"${record.targetDataPath}\"/. \"$srcDataDir/\" 2>/dev/null",
                     timeoutMs = 180000L
                 )
                 if (!mvDataRes.isSuccess) {
-                    shellExecutor.executeCommand("cp -a -p -f \"${record.targetDataPath}/.\" $srcDataDir/ 2>/dev/null && rm -rf \"${record.targetDataPath}\" 2>/dev/null", timeoutMs = 180000L)
+                    shellExecutor.executeCommand("cp -a -p -f \"${record.targetDataPath}/.\" \"$srcDataDir/\" 2>/dev/null && rm -rf \"${record.targetDataPath}\" 2>/dev/null", timeoutMs = 180000L)
                 }
                 shellExecutor.executeCommand("rm -rf \"${record.targetDataPath}\" 2>/dev/null", timeoutMs = 10000L)
             }
@@ -352,11 +370,11 @@ object GameDataRelocator {
             onProgress(75, "Directly moving OBB assets back to internal storage...")
             if (!record.targetObbPath.isNullOrBlank()) {
                 val mvObbRes = shellExecutor.executeCommand(
-                    "mv -f \"${record.targetObbPath}\"/* $srcObbDir/ 2>/dev/null || mv -f \"${record.targetObbPath}\"/. $srcObbDir/ 2>/dev/null",
+                    "mv -f \"${record.targetObbPath}\"/* \"$srcObbDir/\" 2>/dev/null || mv -f \"${record.targetObbPath}\"/. \"$srcObbDir/\" 2>/dev/null",
                     timeoutMs = 180000L
                 )
                 if (!mvObbRes.isSuccess) {
-                    shellExecutor.executeCommand("cp -a -p -f \"${record.targetObbPath}/.\" $srcObbDir/ 2>/dev/null && rm -rf \"${record.targetObbPath}\" 2>/dev/null", timeoutMs = 180000L)
+                    shellExecutor.executeCommand("cp -a -p -f \"${record.targetObbPath}/.\" \"$srcObbDir/\" 2>/dev/null && rm -rf \"${record.targetObbPath}\" 2>/dev/null", timeoutMs = 180000L)
                 }
                 shellExecutor.executeCommand("rm -rf \"${record.targetObbPath}\" 2>/dev/null", timeoutMs = 10000L)
             }
@@ -372,17 +390,27 @@ object GameDataRelocator {
 
     suspend fun ensureGameMounted(context: Context, gamePkg: String): Boolean = withContext(Dispatchers.IO) {
         val record = getRelocatedGamesMap(context)[gamePkg] ?: return@withContext true
-        val destDataDir = record.targetDataPath ?: return@withContext true
-        val destObbDir = record.targetObbPath ?: return@withContext true
+        val destDataDir = record.targetDataPath
+        val destObbDir = record.targetObbPath
 
         val srcDataDir = "/sdcard/Android/data/$gamePkg"
         val srcObbDir = "/sdcard/Android/obb/$gamePkg"
 
-        shellExecutor.executeCommand("mkdir -p $srcDataDir 2>/dev/null; mkdir -p $srcObbDir 2>/dev/null", timeoutMs = 2000L)
-        shellExecutor.executeCommand("mount -o bind \"$destDataDir\" $srcDataDir 2>/dev/null; mount --bind \"$destDataDir\" $srcDataDir 2>/dev/null", timeoutMs = 2000L)
-        shellExecutor.executeCommand("mount -o bind \"$destObbDir\" $srcObbDir 2>/dev/null; mount --bind \"$destObbDir\" $srcObbDir 2>/dev/null", timeoutMs = 2000L)
-        shellExecutor.executeCommand("ln -sf \"$destDataDir\"/* $srcDataDir/ 2>/dev/null", timeoutMs = 2000L)
-        shellExecutor.executeCommand("ln -sf \"$destObbDir\"/* $srcObbDir/ 2>/dev/null", timeoutMs = 2000L)
+        shellExecutor.executeCommand("mkdir -p \"$srcDataDir\" \"$srcObbDir\" 2>/dev/null", timeoutMs = 2000L)
+        if (!destDataDir.isNullOrBlank()) {
+            shellExecutor.executeCommand(
+                "nsenter -t 1 -m mount -o bind \"$destDataDir\" \"$srcDataDir\" 2>/dev/null || su -mm -c \"mount -o bind \\\"$destDataDir\\\" \\\"$srcDataDir\\\"\" 2>/dev/null || mount -o bind \"$destDataDir\" \"$srcDataDir\" 2>/dev/null; mount --bind \"$destDataDir\" \"$srcDataDir\" 2>/dev/null",
+                timeoutMs = 2000L
+            )
+            shellExecutor.executeCommand("ln -sfn \"$destDataDir\" \"$srcDataDir\" 2>/dev/null; ln -sf \"$destDataDir\"/* \"$srcDataDir/\" 2>/dev/null", timeoutMs = 2000L)
+        }
+        if (!destObbDir.isNullOrBlank()) {
+            shellExecutor.executeCommand(
+                "nsenter -t 1 -m mount -o bind \"$destObbDir\" \"$srcObbDir\" 2>/dev/null || su -mm -c \"mount -o bind \\\"$destObbDir\\\" \\\"$srcObbDir\\\"\" 2>/dev/null || mount -o bind \"$destObbDir\" \"$srcObbDir\" 2>/dev/null; mount --bind \"$destObbDir\" \"$srcObbDir\" 2>/dev/null",
+                timeoutMs = 2000L
+            )
+            shellExecutor.executeCommand("ln -sfn \"$destObbDir\" \"$srcObbDir\" 2>/dev/null; ln -sf \"$destObbDir\"/* \"$srcObbDir/\" 2>/dev/null", timeoutMs = 2000L)
+        }
 
         true
     }
@@ -400,7 +428,7 @@ object GameDataRelocator {
 
     private suspend fun queryActiveMountPoints(): List<String> {
         val res = shellExecutor.executeCommand("cat /proc/mounts 2>/dev/null || mount 2>/dev/null", timeoutMs = 2000L)
-        return res.stdout.lines().filter { it.contains("Android/data") || it.contains("Android/obb") }
+        return res.stdout.lines().filter { it.contains("Android/data") || it.contains("Android/obb") || it.contains("TakoStats") }
     }
 
     private fun getDirectorySize(dir: File?): Long {
@@ -424,9 +452,11 @@ object GameDataRelocator {
     )
 
     private fun getRelocatedGamesMap(context: Context): Map<String, RelocationRecord> {
+        val map = mutableMapOf<String, RelocationRecord>()
+
+        // 1. Read from SharedPreferences
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val jsonStr = prefs.getString(KEY_RELOCATED_GAMES, "{}") ?: "{}"
-        val map = mutableMapOf<String, RelocationRecord>()
         try {
             val root = JSONObject(jsonStr)
             val keys = root.keys()
@@ -442,6 +472,61 @@ object GameDataRelocator {
                 )
             }
         } catch (_: Exception) {}
+
+        // 2. Scan external storage drives and /sdcard for relocation_manifest.json to auto-restore if app data was cleared!
+        try {
+            val availableVolumes = StorageManager.getAvailableVolumes(context)
+            for (vol in availableVolumes) {
+                val root = vol.path ?: continue
+                val manifestFile = File(root, "TakoStats/GameData/$MANIFEST_FILE_NAME")
+                if (manifestFile.exists() && manifestFile.canRead()) {
+                    try {
+                        val content = manifestFile.readText()
+                        val mRoot = JSONObject(content)
+                        val mKeys = mRoot.keys()
+                        while (mKeys.hasNext()) {
+                            val pkg = mKeys.next()
+                            val obj = mRoot.getJSONObject(pkg)
+                            val rec = RelocationRecord(
+                                packageName = pkg,
+                                targetVolumeId = obj.optString("targetVolumeId", vol.id),
+                                targetVolumeName = obj.optString("targetVolumeName", vol.name),
+                                targetDataPath = obj.optString("targetDataPath", "${root.absolutePath}/TakoStats/GameData/$pkg/data"),
+                                targetObbPath = obj.optString("targetObbPath", "${root.absolutePath}/TakoStats/GameData/$pkg/obb")
+                            )
+                            map[pkg] = rec
+                        }
+                    } catch (_: Exception) {}
+                } else {
+                    // Fallback: Check if folders exist in <root>/TakoStats/GameData/
+                    val gameDataDir = File(root, "TakoStats/GameData")
+                    if (gameDataDir.exists() && gameDataDir.isDirectory) {
+                        gameDataDir.listFiles()?.forEach { pkgDir ->
+                            if (pkgDir.isDirectory && pkgDir.name.contains(".")) {
+                                val pkg = pkgDir.name
+                                if (!map.containsKey(pkg)) {
+                                    val dataDir = File(pkgDir, "data")
+                                    val obbDir = File(pkgDir, "obb")
+                                    if (dataDir.exists() || obbDir.exists()) {
+                                        map[pkg] = RelocationRecord(
+                                            packageName = pkg,
+                                            targetVolumeId = vol.id,
+                                            targetVolumeName = vol.name,
+                                            targetDataPath = if (dataDir.exists()) dataDir.absolutePath else "",
+                                            targetObbPath = if (obbDir.exists()) obbDir.absolutePath else ""
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Sync back to SharedPreferences
+            saveAllRelocationRecords(context, map)
+        } catch (_: Exception) {}
+
         return map
     }
 
@@ -453,28 +538,58 @@ object GameDataRelocator {
         targetDataPath: String,
         targetObbPath: String
     ) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val jsonStr = prefs.getString(KEY_RELOCATED_GAMES, "{}") ?: "{}"
-        try {
-            val root = JSONObject(jsonStr)
-            val obj = JSONObject().apply {
-                put("targetVolumeId", targetVolumeId)
-                put("targetVolumeName", targetVolumeName)
-                put("targetDataPath", targetDataPath)
-                put("targetObbPath", targetObbPath)
-            }
-            root.put(packageName, obj)
-            prefs.edit().putString(KEY_RELOCATED_GAMES, root.toString()).apply()
-        } catch (_: Exception) {}
+        val currentMap = getRelocatedGamesMap(context).toMutableMap()
+        currentMap[packageName] = RelocationRecord(
+            packageName = packageName,
+            targetVolumeId = targetVolumeId,
+            targetVolumeName = targetVolumeName,
+            targetDataPath = targetDataPath,
+            targetObbPath = targetObbPath
+        )
+        saveAllRelocationRecords(context, currentMap)
     }
 
     private fun removeRelocationRecord(context: Context, packageName: String) {
+        val currentMap = getRelocatedGamesMap(context).toMutableMap()
+        currentMap.remove(packageName)
+        saveAllRelocationRecords(context, currentMap)
+    }
+
+    private fun saveAllRelocationRecords(context: Context, map: Map<String, RelocationRecord>) {
+        val root = JSONObject()
+        for ((pkg, rec) in map) {
+            val obj = JSONObject().apply {
+                put("targetVolumeId", rec.targetVolumeId)
+                put("targetVolumeName", rec.targetVolumeName)
+                put("targetDataPath", rec.targetDataPath)
+                put("targetObbPath", rec.targetObbPath)
+            }
+            root.put(pkg, obj)
+        }
+        val jsonStr = root.toString(2)
+
+        // 1. Save to SharedPreferences
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val jsonStr = prefs.getString(KEY_RELOCATED_GAMES, "{}") ?: "{}"
+        prefs.edit().putString(KEY_RELOCATED_GAMES, jsonStr).apply()
+
+        // 2. Save to internal /sdcard/TakoStats/GameData/
         try {
-            val root = JSONObject(jsonStr)
-            root.remove(packageName)
-            prefs.edit().putString(KEY_RELOCATED_GAMES, root.toString()).apply()
+            val internalManifest = File(Environment.getExternalStorageDirectory(), "TakoStats/GameData/$MANIFEST_FILE_NAME")
+            internalManifest.parentFile?.mkdirs()
+            internalManifest.writeText(jsonStr)
+        } catch (_: Exception) {}
+
+        // 3. Save to all available external drives
+        try {
+            val availableVolumes = StorageManager.getAvailableVolumes(context)
+            for (vol in availableVolumes) {
+                val vPath = vol.path ?: continue
+                if (vol.type != StorageType.INTERNAL_APP) {
+                    val extManifest = File(vPath, "TakoStats/GameData/$MANIFEST_FILE_NAME")
+                    extManifest.parentFile?.mkdirs()
+                    extManifest.writeText(jsonStr)
+                }
+            }
         } catch (_: Exception) {}
     }
 }
