@@ -242,7 +242,7 @@ object GameDataRelocator {
         count
     }
 
-    private fun queryActiveMountPoints(): List<String> {
+    private suspend fun queryActiveMountPoints(): List<String> {
         val res = shellExecutor.executeCommand("cat /proc/mounts 2>/dev/null || mount 2>/dev/null", timeoutMs = 2000L)
         return res.stdout.lines().filter { it.contains("Android/data") || it.contains("Android/obb") }
     }
