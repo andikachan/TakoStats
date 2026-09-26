@@ -1,10 +1,12 @@
 package ndika.monitor.storage
 
+import android.app.usage.StorageStatsManager
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Environment
+import android.os.Process
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import ndika.monitor.booster.executor.IShizukuShellExecutor
@@ -25,6 +27,7 @@ object GameDataRelocator {
         val packageManager = context.packageManager
         val relocatedMap = getRelocatedGamesMap(context)
         val activeMounts = queryActiveMountPoints()
+        val (shellDataSizes, shellObbSizes) = queryAllAndroidDataSizesViaShell()
 
         try {
             val installedApps = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -55,17 +58,46 @@ object GameDataRelocator {
                 val relocationRecord = relocatedMap[app.packageName]
                 val isRelocated = relocationRecord != null
 
-                // Compute folder sizes
-                val dataSize = if (isRelocated && relocationRecord?.targetDataPath != null) {
-                    getDirectorySize(File(relocationRecord.targetDataPath))
-                } else {
-                    getDirectorySize(dataDir)
-                }
+                // Compute folder sizes with multi-tier detection
+                var dataSize: Long
+                var obbSize: Long
 
-                val obbSize = if (isRelocated && relocationRecord?.targetObbPath != null) {
-                    getDirectorySize(File(relocationRecord.targetObbPath))
+                if (isRelocated) {
+                    val destData = relocationRecord?.targetDataPath
+                    val destObb = relocationRecord?.targetObbPath
+
+                    val sData = if (!destData.isNullOrBlank()) queryPathSizeViaShell(destData) else 0L
+                    dataSize = if (sData > 0L) sData else if (!destData.isNullOrBlank()) getDirectorySize(File(destData)) else 0L
+
+                    val sObb = if (!destObb.isNullOrBlank()) queryPathSizeViaShell(destObb) else 0L
+                    obbSize = if (sObb > 0L) sObb else if (!destObb.isNullOrBlank()) getDirectorySize(File(destObb)) else 0L
                 } else {
-                    getDirectorySize(obbDir)
+                    dataSize = shellDataSizes[app.packageName] ?: 0L
+                    obbSize = shellObbSizes[app.packageName] ?: 0L
+
+                    // Fallback 1: Java File listing
+                    if (dataSize <= 0L) {
+                        dataSize = getDirectorySize(dataDir)
+                    }
+                    if (obbSize <= 0L) {
+                        obbSize = getDirectorySize(obbDir)
+                    }
+
+                    // Fallback 2: Single shell query if dir exists
+                    if (dataSize <= 0L && dataDir.exists()) {
+                        dataSize = queryPathSizeViaShell(dataDir.absolutePath)
+                    }
+                    if (obbSize <= 0L && obbDir.exists()) {
+                        obbSize = queryPathSizeViaShell(obbDir.absolutePath)
+                    }
+
+                    // Fallback 3: System StorageStatsManager
+                    if (dataSize <= 0L && obbSize <= 0L) {
+                        val statsSize = getStorageStatsDataSize(context, app.packageName)
+                        if (statsSize > 0L) {
+                            dataSize = statsSize
+                        }
+                    }
                 }
 
                 val isMounted = activeMounts.any { it.contains(app.packageName) }
@@ -103,6 +135,69 @@ object GameDataRelocator {
         list
     }
 
+    private suspend fun queryAllAndroidDataSizesViaShell(): Pair<Map<String, Long>, Map<String, Long>> {
+        val dataMap = mutableMapOf<String, Long>()
+        val obbMap = mutableMapOf<String, Long>()
+        try {
+            val res = shellExecutor.executeCommand(
+                "du -sk /sdcard/Android/data/* /sdcard/Android/obb/* /storage/emulated/0/Android/data/* /storage/emulated/0/Android/obb/* 2>/dev/null",
+                timeoutMs = 5000L
+            )
+            parseDuLines(res.stdout, dataMap, obbMap)
+        } catch (_: Exception) {}
+        return Pair(dataMap, obbMap)
+    }
+
+    private fun parseDuLines(output: String, dataMap: MutableMap<String, Long>, obbMap: MutableMap<String, Long>) {
+        output.lines().forEach { line ->
+            val trimmed = line.trim()
+            if (trimmed.isEmpty()) return@forEach
+            val parts = trimmed.split(Regex("\\s+"), limit = 2)
+            if (parts.size == 2) {
+                val sizeKb = parts[0].toLongOrNull() ?: return@forEach
+                val path = parts[1].trimEnd('/')
+                val pkg = path.substringAfterLast('/')
+                if (pkg.isNotEmpty() && pkg.contains('.')) {
+                    val sizeBytes = sizeKb * 1024L
+                    if (path.contains("/Android/data") || path.contains("/data/")) {
+                        dataMap[pkg] = (dataMap[pkg] ?: 0L) + sizeBytes
+                    } else if (path.contains("/Android/obb") || path.contains("/obb/")) {
+                        obbMap[pkg] = (obbMap[pkg] ?: 0L) + sizeBytes
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun queryPathSizeViaShell(path: String): Long {
+        try {
+            val res = shellExecutor.executeCommand("du -sk \"$path\" 2>/dev/null", timeoutMs = 3000L)
+            val trimmed = res.stdout.trim()
+            if (trimmed.isNotEmpty()) {
+                val sizeKb = trimmed.split(Regex("\\s+"), limit = 2).firstOrNull()?.toLongOrNull()
+                if (sizeKb != null && sizeKb > 0L) {
+                    return sizeKb * 1024L
+                }
+            }
+        } catch (_: Exception) {}
+        return 0L
+    }
+
+    private fun getStorageStatsDataSize(context: Context, packageName: String): Long {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                val storageStatsManager = context.getSystemService(Context.STORAGE_STATS_SERVICE) as? StorageStatsManager
+                val packageManager = context.packageManager
+                val appInfo = packageManager.getApplicationInfo(packageName, 0)
+                val stats = storageStatsManager?.queryStatsForPackage(appInfo.storageUuid, packageName, Process.myUserHandle())
+                if (stats != null) {
+                    return stats.dataBytes
+                }
+            } catch (_: Exception) {}
+        }
+        return 0L
+    }
+
     suspend fun relocateGameData(
         context: Context,
         gamePkg: String,
@@ -138,7 +233,10 @@ object GameDataRelocator {
             onProgress(75, "Verifying relocated files...")
             val destDataFile = File(destDataDir)
             val destObbFile = File(destObbDir)
-            val totalFreedBytes = getDirectorySize(destDataFile) + getDirectorySize(destObbFile)
+            var totalFreedBytes = queryPathSizeViaShell(destDataDir) + queryPathSizeViaShell(destObbDir)
+            if (totalFreedBytes <= 0L) {
+                totalFreedBytes = getDirectorySize(destDataFile) + getDirectorySize(destObbFile)
+            }
 
             // 4. Free internal storage
             onProgress(85, "Freeing internal storage...")

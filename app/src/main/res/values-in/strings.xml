@@ -140,4 +140,7 @@
 
     <string name="game_relocator_title">Pemindah Data Game dan OBB</string>
     <string name="game_relocator_summary">Pindahkan data game (10GB+) ke Kartu SD atau Flashdisk OTG agar memori internal tetap lega</string>
+    <string name="all_files_permission_title">Perizinan Akses Semua File Diperlukan</string>
+    <string name="all_files_permission_desc">Berikan izin Akses Semua File agar TakoStats dapat membaca ukuran folder data game/OBB secara akurat dan memindahkannya ke memori eksternal tanpa batasan sistem.</string>
+    <string name="grant_all_files_access">Izinkan Akses Semua File</string>
 </resources>

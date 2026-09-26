@@ -24,6 +24,7 @@ import ndika.monitor.databinding.ItemGameRelocatorBinding
 import ndika.monitor.shizuku.ShizukuManager
 import ndika.monitor.storage.GameDataRelocator
 import ndika.monitor.storage.StorageManager
+import ndika.monitor.storage.StoragePermissionHelper
 import ndika.monitor.storage.StorageType
 import ndika.monitor.storage.StorageVolumeInfo
 import ndika.monitor.storage.model.GameStorageInfo
@@ -43,7 +44,23 @@ class GameDataRelocatorActivity : AppCompatActivity() {
         setupToolbar()
         setupRecyclerView()
         setupListeners()
+        updatePermissionBanner()
         loadGamesStorageData()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val hadAccess = binding.cardPermissionWarning.visibility == View.GONE
+        updatePermissionBanner()
+        val hasAccess = binding.cardPermissionWarning.visibility == View.GONE
+        if (!hadAccess && hasAccess) {
+            loadGamesStorageData()
+        }
+    }
+
+    private fun updatePermissionBanner() {
+        val hasAccess = StoragePermissionHelper.hasAllFilesAccess(this)
+        binding.cardPermissionWarning.visibility = if (hasAccess) View.GONE else View.VISIBLE
     }
 
     private fun setupToolbar() {
@@ -63,6 +80,10 @@ class GameDataRelocatorActivity : AppCompatActivity() {
     }
 
     private fun setupListeners() {
+        binding.btnGrantPermission.setOnClickListener {
+            StoragePermissionHelper.requestAllFilesAccess(this)
+        }
+
         binding.searchGames.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
             override fun onQueryTextSubmit(query: String?): Boolean = false
 

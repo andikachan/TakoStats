@@ -140,4 +140,7 @@
 
     <string name="game_relocator_title">Game Data and OBB Relocator</string>
     <string name="game_relocator_summary">Move heavy game data (10GB+) to SD Card or USB OTG and keep internal storage free</string>
+    <string name="all_files_permission_title">All Files Access Permission Required</string>
+    <string name="all_files_permission_desc">Grant All Files Access permission so TakoStats can accurately read game data/OBB folder sizes and transfer them to external storage without restrictions.</string>
+    <string name="grant_all_files_access">Grant All Files Access</string>
 </resources>
