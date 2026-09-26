@@ -294,7 +294,12 @@ class GameDataRelocatorActivity : AppCompatActivity() {
                 holder.binding.tvStorageStatusBadge.text = if (item.isMounted) "RELOCATED (MOUNTED)" else "RELOCATED (UNLINKED)"
                 holder.binding.tvStorageStatusBadge.setBackgroundColor(Color.parseColor(if (item.isMounted) "#2E7D32" else "#E65100"))
                 holder.binding.tvRelocatedPathDesc.visibility = View.VISIBLE
-                holder.binding.tvRelocatedPathDesc.text = "Target: ${item.targetVolumeName ?: "External Storage"}\n${item.targetDataPath ?: ""}"
+                val paths = listOfNotNull(
+                    item.targetSystemDataPath?.takeIf { it.isNotBlank() }?.let { "Sys: $it" },
+                    item.targetDataPath?.takeIf { it.isNotBlank() }?.let { "Data: $it" },
+                    item.targetObbPath?.takeIf { it.isNotBlank() }?.let { "OBB: $it" }
+                ).joinToString("\n")
+                holder.binding.tvRelocatedPathDesc.text = "Target: ${item.targetVolumeName ?: "External Storage"}${if (paths.isNotEmpty()) "\n$paths" else ""}"
 
                 holder.binding.btnRestoreToInternal.visibility = View.VISIBLE
                 holder.binding.btnRelocateToExternal.text = "Change Drive"
